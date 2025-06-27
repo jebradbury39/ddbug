@@ -30,10 +30,17 @@ impl<'input> Print for Parameter<'input> {
             |state| state.line(|w, state| print_size_and_decl(self, w, state)),
             |state| {
                 if state.options().print_variable_locations {
-                    print::register::print_list_with_ranges(
-                        state,
-                        &self.registers().collect::<Vec<_>>(),
-                    )?;
+                    if state.options().print_range_info {
+                        print::register::print_list_with_ranges(
+                            state,
+                            &self.registers().collect::<Vec<_>>(),
+                        )?;
+                    } else {
+                        print::register::print_list(
+                            state,
+                            self.registers().map(|x| x.1).collect(),
+                        )?;
+                    }
                     print::frame_location::print_list(state, self.frame_locations().collect())?;
                 }
                 Ok(())
@@ -69,7 +76,7 @@ impl<'input> Print for Parameter<'input> {
     }
 }
 
-impl<'input> DiffList for Parameter<'input> {
+impl DiffList for Parameter<'_> {
     fn step_cost(&self, _state: &DiffState, _arg: &Unit) -> usize {
         1
     }
