@@ -1,11 +1,17 @@
-fn diff(name: &str, expect: &str) {
+struct Fixture {
+    unit: &'static str,
+    file1: &'static str,
+    file2: &'static str,
+}
+
+fn diff(fixture: &Fixture, name: &str, expect: &str) {
+    let file1 = ddbug::File::parse(fixture.file1.into()).unwrap();
+    let file2 = ddbug::File::parse(fixture.file2.into()).unwrap();
     let mut options = options();
-    options.unit("src/diff.c").name(name);
+    options.unit(fixture.unit).name(name);
     let mut diff = Vec::new();
-    let output_1 = ddbug::File::parse("tests/bin/diff1".into()).unwrap();
-    let output_2 = ddbug::File::parse("tests/bin/diff2".into()).unwrap();
     let mut printer = ddbug::TextPrinter::new(&mut diff, &options);
-    ddbug::diff(&mut printer, output_1.file(), output_2.file(), &options).unwrap();
+    ddbug::diff(&mut printer, file1.file(), file2.file(), &options).unwrap();
     let diff = String::from_utf8(diff).unwrap();
     if !equal(&diff, expect) {
         println!("\nDiff:");
@@ -38,27 +44,27 @@ fn options() -> ddbug::Options {
     }
 }
 
-fn equal(mut diff: &str, expect: &str) -> bool {
+fn equal(mut output: &str, expect: &str) -> bool {
     let mut expects = expect.split("[..]");
     if let Some(e) = expects.next() {
-        if !diff.starts_with(e) {
+        if !output.starts_with(e) {
             return false;
         }
-        diff = &diff[e.len()..];
+        output = &output[e.len()..];
     }
     for e in expects {
         loop {
-            if diff.starts_with(e) {
-                diff = &diff[e.len()..];
+            if output.starts_with(e) {
+                output = &output[e.len()..];
                 break;
             }
-            if diff.is_empty() {
+            if output.is_empty() {
                 return false;
             }
-            diff = &diff[1..];
+            output = &output[1..];
         }
     }
-    diff.is_empty()
+    output.is_empty()
 }
 
 macro_rules! test_diff {
@@ -66,9 +72,17 @@ macro_rules! test_diff {
         #[test]
         fn $name() {
             let expect = concat!($($val),*);
-            diff(stringify!($name), expect);
+            diff(&FIXTURE, stringify!($name), expect);
         }
     }
 }
 
-include!("src/diff.rs");
+mod diff {
+    use super::*;
+    static FIXTURE: Fixture = Fixture {
+        unit: "src/diff.c",
+        file1: "tests/bin/diff1",
+        file2: "tests/bin/diff2",
+    };
+    include!("src/diff.rs");
+}
