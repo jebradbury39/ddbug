@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "main",
+    "ddbug",
     "parser",
 ]
 resolver = "3"
