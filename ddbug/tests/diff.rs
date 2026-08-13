@@ -61,7 +61,7 @@ fn equal(mut diff: &str, expect: &str) -> bool {
     diff.is_empty()
 }
 
-macro_rules! test {
+macro_rules! test_diff {
     ($name:ident, $($val:expr),*) => {
         #[test]
         fn $name() {

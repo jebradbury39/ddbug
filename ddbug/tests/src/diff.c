@@ -28,7 +28,7 @@ int main() {}
 
 #if defined(TESTRS)
 #define EXPECT(T, ...) \
-    test!(T, __VA_ARGS__);
+    test_diff!(T, __VA_ARGS__);
 #else
 #define EXPECT(T, ...)
 #endif
