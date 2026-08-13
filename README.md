@@ -39,7 +39,7 @@ Usually you will want to run `ddbug` on binaries that have been
 optimized, but which still contain debugging information. For rust, you
 can build your code using:
 ```
-RUSTFLAGS=-g cargo build --release
+CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release
 ```
 
 ### Diff mode
