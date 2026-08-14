@@ -16,7 +16,6 @@ pub use self::html::HtmlPrinter;
 pub(crate) mod base_type;
 pub(crate) mod enumeration;
 pub(crate) mod file;
-pub(crate) mod frame_location;
 pub(crate) mod function;
 pub(crate) mod function_call;
 pub(crate) mod inherit;

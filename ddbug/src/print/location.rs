@@ -1,24 +1,72 @@
 use std::cmp;
 
-use parser::{FileHash, Location, Piece};
+use parser::{FileHash, Location, Piece, Range, Size};
 
 use crate::Result;
 use crate::print::{self, DiffList, DiffState, Print, PrintState, ValuePrinter};
 
-pub(crate) fn print_list(state: &mut PrintState, locations: Vec<Location>) -> Result<()> {
-    state.list(&(), &locations)
+fn locations(pieces: &[(Range, Piece)]) -> Vec<(Location, Size)> {
+    let mut locations: Vec<_> = pieces
+        .iter()
+        .filter_map(|(_range, piece)| {
+            if piece.is_value {
+                return None;
+            }
+            match piece.location {
+                Location::Empty => None,
+                // Variables display this separately.
+                Location::Address { .. } => None,
+                // We only display size for memory locations.
+                Location::RegisterOffset { .. }
+                | Location::FrameOffset { .. }
+                | Location::CfaOffset { .. } => Some((piece.location, piece.bit_size)),
+                // Size is not displayed, so omit it for dedup.
+                _ => Some((piece.location, Size::none())),
+            }
+        })
+        .collect();
+    locations.sort_unstable();
+    locations.dedup();
+    locations
+}
+
+pub(crate) fn print_list(state: &mut PrintState, pieces: &[(Range, Piece)]) -> Result<()> {
+    let locations = locations(pieces);
+    if locations.len() > 1 {
+        state.field_expanded("locations", |state| state.list(&(), &locations))?;
+    } else if let Some((location, bit_size)) = locations.first() {
+        state.field("location", |w, hash| print(*location, *bit_size, w, hash))?;
+    }
+    Ok(())
 }
 
 pub(crate) fn diff_list(
     state: &mut DiffState,
-    locations_a: Vec<Location>,
-    locations_b: Vec<Location>,
+    pieces_a: &[(Range, Piece)],
+    pieces_b: &[(Range, Piece)],
 ) -> Result<()> {
-    state.list(&(), &locations_a, &(), &locations_b)
+    let locations_a = locations(pieces_a);
+    let locations_b = locations(pieces_b);
+    if locations_a.len() > 1 || locations_b.len() > 1 {
+        state.field_expanded("locations", |state| {
+            state.ord_list(&(), &locations_a, &(), &locations_b)
+        })?;
+    } else if !locations_a.is_empty() || !locations_b.is_empty() {
+        let location_a = locations_a.first();
+        let location_b = locations_b.first();
+        state.field("location", location_a, location_b, |w, hash, location| {
+            if let Some((location, bit_size)) = location {
+                print(*location, *bit_size, w, hash)?;
+            }
+            Ok(())
+        })?;
+    }
+    Ok(())
 }
 
 pub(crate) fn print_pieces(state: &mut PrintState, pieces: &[Piece]) -> Result<()> {
-    print_list(state, pieces.iter().map(|p| p.location).collect())
+    let locations: Vec<_> = pieces.iter().map(|p| (p.location, p.bit_size)).collect();
+    state.list(&(), &locations)
 }
 
 pub(crate) fn diff_pieces(
@@ -26,14 +74,17 @@ pub(crate) fn diff_pieces(
     pieces_a: &[Piece],
     pieces_b: &[Piece],
 ) -> Result<()> {
-    diff_list(
-        state,
-        pieces_a.iter().map(|p| p.location).collect(),
-        pieces_b.iter().map(|p| p.location).collect(),
-    )
+    let locations_a: Vec<_> = pieces_a.iter().map(|p| (p.location, p.bit_size)).collect();
+    let locations_b: Vec<_> = pieces_b.iter().map(|p| (p.location, p.bit_size)).collect();
+    state.list(&(), &locations_a, &(), &locations_b)
 }
 
-pub(crate) fn print(location: Location, w: &mut dyn ValuePrinter, hash: &FileHash) -> Result<()> {
+pub(crate) fn print(
+    location: Location,
+    bit_size: Size,
+    w: &mut dyn ValuePrinter,
+    hash: &FileHash,
+) -> Result<()> {
     match location {
         Location::Empty => {}
         Location::Literal { value } => write!(w, "0x{:x}", value)?,
@@ -44,24 +95,33 @@ pub(crate) fn print(location: Location, w: &mut dyn ValuePrinter, hash: &FileHas
             print::register::print(register, w, hash)?;
             if offset < 0 {
                 write!(w, "-0x{:x}", -offset)?;
-            } else if offset > 0 {
+            } else {
                 write!(w, "+0x{:x}", offset)?;
+            }
+            if let Some(bit_size) = bit_size.get() {
+                write!(w, "[{}]", bit_size.div_ceil(8))?;
             }
         }
         Location::FrameOffset { offset } => {
             write!(w, "frame")?;
             if offset < 0 {
                 write!(w, "-0x{:x}", -offset)?;
-            } else if offset > 0 {
+            } else {
                 write!(w, "+0x{:x}", offset)?;
+            }
+            if let Some(bit_size) = bit_size.get() {
+                write!(w, "[{}]", bit_size.div_ceil(8))?;
             }
         }
         Location::CfaOffset { offset } => {
             write!(w, "cfa")?;
             if offset < 0 {
                 write!(w, "-0x{:x}", -offset)?;
-            } else if offset > 0 {
+            } else {
                 write!(w, "+0x{:x}", offset)?;
+            }
+            if let Some(bit_size) = bit_size.get() {
+                write!(w, "[{}]", bit_size.div_ceil(8))?;
             }
         }
         Location::Address { address } => {
@@ -77,19 +137,19 @@ pub(crate) fn print(location: Location, w: &mut dyn ValuePrinter, hash: &FileHas
     Ok(())
 }
 
-impl Print for Location {
+impl Print for (Location, Size) {
     type Arg = ();
 
     fn print(&self, state: &mut PrintState, _arg: &()) -> Result<()> {
-        state.line(|w, hash| print(*self, w, hash))
+        state.line(|w, hash| print(self.0, self.1, w, hash))
     }
 
     fn diff(state: &mut DiffState, _arg_a: &(), a: &Self, _arg_b: &(), b: &Self) -> Result<()> {
-        state.line(a, b, |w, hash, x| print(*x, w, hash))
+        state.line(a, b, |w, hash, x| print(x.0, x.1, w, hash))
     }
 }
 
-impl DiffList for Location {
+impl DiffList for (Location, Size) {
     fn step_cost(&self, _state: &DiffState, _arg: &()) -> usize {
         1
     }

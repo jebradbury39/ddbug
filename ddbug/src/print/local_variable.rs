@@ -41,11 +41,7 @@ impl<'input> Print for LocalVariable<'input> {
             |state| {
                 if state.options().print_variable_locations {
                     state.field("address", |w, _state| print_address(self, w))?;
-                    print::register::print_list(state, self.registers().map(|x| x.1).collect())?;
-                    print::frame_location::print_list(
-                        state,
-                        self.frame_locations().map(|x| x.1).collect(),
-                    )?;
+                    print::location::print_list(state, self.locations())?;
                 }
                 Ok(())
             },
@@ -68,17 +64,7 @@ impl<'input> Print for LocalVariable<'input> {
                     state.ignore_diff(flag, |state| {
                         state.field("address", a, b, |w, _state, x| print_address(x, w))
                     })?;
-
-                    print::register::diff_list(
-                        state,
-                        a.registers().map(|x| x.1).collect(),
-                        b.registers().map(|x| x.1).collect(),
-                    )?;
-                    print::frame_location::diff_list(
-                        state,
-                        a.frame_locations().map(|x| x.1).collect(),
-                        b.frame_locations().map(|x| x.1).collect(),
-                    )?;
+                    print::location::diff_list(state, a.locations(), b.locations())?;
                 }
                 Ok(())
             },
