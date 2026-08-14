@@ -695,7 +695,7 @@ fn add_variable_frame_locations<'input>(
     let size = v.byte_size(hash);
     let name = v.name();
     let ty = v.type_offset();
-    for location in v.frame_locations() {
+    for (_, location) in v.frame_locations() {
         let offset = location.offset;
         let size = if let Some(bit_size) = location.bit_size.get() {
             Some(bit_size.div_ceil(8))
