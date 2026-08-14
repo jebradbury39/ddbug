@@ -3899,7 +3899,7 @@ where
             gimli::Operation::Plus => {
                 let one = pop(&mut stack)?;
                 let two = pop(&mut stack)?;
-                match (one, two) {
+                let location = match (one, two) {
                     (Location::Other, _) | (_, Location::Other) => Location::Other,
                     (Location::RegisterOffset { .. }, Location::RegisterOffset { .. }) => {
                         // Seen in practice, but we can't handle this yet.
@@ -3910,11 +3910,12 @@ where
                         Location::Other
                     }
                 };
+                stack.push(location);
             }
             gimli::Operation::Minus => {
                 let one = pop(&mut stack)?;
                 let two = pop(&mut stack)?;
-                match (one, two) {
+                let location = match (one, two) {
                     (Location::Other, _) | (_, Location::Other) => Location::Other,
                     (Location::RegisterOffset { .. }, Location::RegisterOffset { .. }) => {
                         // Seen in practice, but we can't handle this yet.
@@ -3930,6 +3931,7 @@ where
                         Location::Other
                     }
                 };
+                stack.push(location);
             }
             gimli::Operation::Neg
             | gimli::Operation::Not
