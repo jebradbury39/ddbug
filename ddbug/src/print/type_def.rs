@@ -75,19 +75,12 @@ impl<'input> PrintHeader for TypeDef<'input> {
             )?;
         }
         state.field("size", a, b, |w, state, x| print_byte_size(x, w, state))?;
-        let ty_a = filter_option(a.ty(state.hash_a()), |ty| ty.is_anon());
+        let ty_a = a.ty(state.hash_a()).filter(|ty| ty.is_anon());
         let ty_a = ty_a.as_deref();
-        let ty_b = filter_option(b.ty(state.hash_b()), |ty| ty.is_anon());
+        let ty_b = b.ty(state.hash_b()).filter(|ty| ty.is_anon());
         let ty_b = ty_b.as_deref();
         state.field_expanded("members", |state| {
             print::types::diff_members(state, unit_a, ty_a, unit_b, ty_b)
         })
     }
-}
-
-fn filter_option<T, F>(o: Option<T>, f: F) -> Option<T>
-where
-    F: FnOnce(&T) -> bool,
-{
-    o.and_then(|v| if f(&v) { Some(v) } else { None })
 }

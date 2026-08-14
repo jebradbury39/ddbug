@@ -577,8 +577,8 @@ impl<'w> ValuePrinter for HtmlValuePrinter<'w> {
             write!(
                 self.w,
                 "<span title=\"{}\">{}</span>",
-                &escaped_str(name),
-                &escaped_str(&result),
+                escaped_str(name),
+                escaped_str(&result),
             )?;
         } else {
             self.w.write_all(&escaped(name.as_bytes()))?;
