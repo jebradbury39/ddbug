@@ -30,7 +30,7 @@ pub(crate) fn diff_list(
     frame_locations_a.dedup();
     frame_locations_b.sort_unstable();
     frame_locations_b.dedup();
-    if frame_locations_a.len() > 1 || frame_locations_a.len() > 1 {
+    if frame_locations_a.len() > 1 || frame_locations_b.len() > 1 {
         state.field_expanded("stack frame", |state| {
             state.ord_list(&(), &frame_locations_a, &(), &frame_locations_b)
         })?;
