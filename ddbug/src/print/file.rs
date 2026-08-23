@@ -1,4 +1,3 @@
-use std::cmp;
 use std::collections::HashMap;
 
 use parser::{File, FileHash, Function, Type, Unit, Variable};
@@ -806,7 +805,11 @@ pub fn bloat_index(file: &File, options: &Options) -> BloatIndex {
     }
 
     let mut function_totals: Vec<_> = function_totals.into_iter().collect();
-    function_totals.sort_by_key(|f| cmp::Reverse(f.1.size));
+    function_totals.sort_by(|(id_a, total_a), (id_b, total_b)| {
+        (total_b.size.cmp(&total_a.size))
+            .then_with(|| id_a.name.cmp(&id_b.name))
+            .then_with(|| id_a.source.cmp(&id_b.source))
+    });
 
     BloatIndex {
         ids,
