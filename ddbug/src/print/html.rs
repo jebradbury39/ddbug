@@ -381,6 +381,7 @@ impl<'w> Printer for HtmlPrinter<'w> {
         write!(self.w, "<li class=\"treebranch\">")?;
         self.line_started = true;
         header(self)?;
+        self.line_started = false;
         if collapsed {
             writeln!(self.w, "<ul style=\"display:none\">")?;
         } else {
@@ -388,7 +389,6 @@ impl<'w> Printer for HtmlPrinter<'w> {
         }
         self.write_buf(body)?;
         writeln!(self.w, "</ul></li>")?;
-        self.line_started = false;
         Ok(())
     }
 
@@ -407,8 +407,8 @@ impl<'w> Printer for HtmlPrinter<'w> {
         )?;
         self.line_started = true;
         header(self)?;
-        writeln!(self.w, "<ul style=\"display:none\">")?;
         self.line_started = false;
+        writeln!(self.w, "<ul style=\"display:none\">")?;
         if !self.http {
             body(self)?;
         }
@@ -422,8 +422,8 @@ impl<'w> Printer for HtmlPrinter<'w> {
         write!(self.w, "<li class=\"detail\" data-detail=\"{}\">", id,)?;
         self.line_started = true;
         self.line(label, &[])?;
-        writeln!(self.w, "</li>")?;
         self.line_started = false;
+        writeln!(self.w, "</li>")?;
         Ok(())
     }
 
