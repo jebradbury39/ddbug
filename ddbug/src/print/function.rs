@@ -276,7 +276,7 @@ impl<'input> Print for Function<'input> {
         b: &Self,
     ) -> Result<()> {
         state.id(
-            unit_a.id(),
+            a.id(),
             |state| PrintHeader::diff_header(state, a, b),
             |state| PrintHeader::diff_body(state, unit_a, a, unit_b, b),
         )?;

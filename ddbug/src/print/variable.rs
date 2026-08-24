@@ -87,7 +87,8 @@ pub(crate) fn diff(
     unit_b: &Unit,
     b: &Variable,
 ) -> Result<()> {
-    state.collapsed(
+    state.id(
+        a.id(),
         |state| PrintHeader::diff_header(state, a, b),
         |state| PrintHeader::diff_body(state, unit_a, a, unit_b, b),
     )?;
