@@ -229,7 +229,6 @@ const FOOTER: &str = r#"</ul>
 
 pub struct HtmlPrinter<'w> {
     w: &'w mut dyn Write,
-    indent: usize,
     prefix: DiffPrefix,
     inline_depth: usize,
     // Hack to allow indented <ul> to be included within parent <li>.
@@ -241,7 +240,6 @@ impl<'w> HtmlPrinter<'w> {
     pub fn new(w: &'w mut dyn Write, options: &Options) -> Self {
         HtmlPrinter {
             w,
-            indent: 0,
             prefix: DiffPrefix::None,
             inline_depth: options.inline_depth,
             line_started: false,
@@ -279,7 +277,6 @@ impl<'w> Printer for HtmlPrinter<'w> {
         let mut p = HtmlPrinter {
             w: buf,
             // TODO: need to ensure these are all unchanged?
-            indent: self.indent,
             prefix: self.prefix,
             inline_depth: self.inline_depth,
             line_started: self.line_started,
@@ -361,7 +358,6 @@ impl<'w> Printer for HtmlPrinter<'w> {
         let mut printer = HtmlPrinter {
             w: buf,
             // TODO: need to ensure these are all unchanged?
-            indent: self.indent + 1,
             prefix: self.prefix,
             inline_depth: self.inline_depth,
             line_started: false,
