@@ -21,6 +21,8 @@
 #define X_USE_VAR(type, T) type * use_ ## T = & T
 #define USE_VAR(type, T) X_USE_VAR(type, T)
 
+#define INLINE static inline __attribute__((always_inline))
+
 #if defined(TEST1) || defined(TEST2)
 #define TEST
 int main() {}
@@ -999,6 +1001,42 @@ EXPECT(
     "+ \t\t[1]\tf: char\n",
     "- \t\t[4]\textra: int\n",
     "  \t\t[1]\tg: char\n",
+    "\n")
+
+#undef T
+#define T function_diff_inlined_functions_add
+#ifdef TEST1
+    int T(int x) { return x; }
+#endif
+#ifdef TEST2
+    INLINE int NAME(T, level2)(int x) { return x + 2; }
+    INLINE int NAME(T, level1)(int x) { return NAME(T, level2)(x) + 1; }
+    int T(int x) { return NAME(T, level1)(x); }
+#endif
+EXPECT(
+    T,
+    "  fn ", S(T), "\n",
+    "[..]",
+    "  \tinlined functions:\n",
+    "+ \t\t[..]\t", S(T), "_level1\n",
+    "\n")
+
+#undef T
+#define T function_diff_inlined_functions_delete
+#ifdef TEST1
+    INLINE int NAME(T, level2)(int x) { return x + 2; }
+    INLINE int NAME(T, level1)(int x) { return NAME(T, level2)(x) + 1; }
+    int T(int x) { return NAME(T, level1)(x); }
+#endif
+#ifdef TEST2
+    int T(int x) { return x; }
+#endif
+EXPECT(
+    T,
+    "  fn ", S(T), "\n",
+    "[..]",
+    "  \tinlined functions:\n",
+    "- \t\t[..]\t", S(T), "_level1\n",
     "\n")
 
 #undef T

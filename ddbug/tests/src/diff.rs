@@ -43,6 +43,8 @@ test_diff!(array_diff_size, "- type ", "array_diff_size", " = [char; 1]\n", "+ t
 test_diff!(function_equal, "");
 test_diff!(function_diff_return_type, "  fn ", "function_diff_return_type", "\n", "[..]\n", "  \treturn type:\n", "- \t\t[1]\tchar\n", "+ \t\t[4]\tint\n", "\n");
 test_diff!(function_diff_variables, "  fn ", "function_diff_variables", "\n", "[..]\n", "  \tvariables:\n", "- \t\t[1]\ta: char\n", "+ \t\t[1]\tb: char\n", "  \t\t[1]\tc: char\n", "- \t\t[1]\td: char\n", "+ \t\t[4]\td: int\n", "- \t\t[1]\te: char\n", "+ \t\t[1]\tf: char\n", "- \t\t[4]\textra: int\n", "  \t\t[1]\tg: char\n", "\n");
+test_diff!(function_diff_inlined_functions_add, "  fn ", "function_diff_inlined_functions_add", "\n", "[..]", "  \tinlined functions:\n", "+ \t\t[..]\t", "function_diff_inlined_functions_add", "_level1\n", "\n");
+test_diff!(function_diff_inlined_functions_delete, "  fn ", "function_diff_inlined_functions_delete", "\n", "[..]", "  \tinlined functions:\n", "- \t\t[..]\t", "function_diff_inlined_functions_delete", "_level1\n", "\n");
 test_diff!(variable_equal, "");
 test_diff!(variable_diff_size, "- var ", "variable_diff_size", ": [char; 1]\n", "+ var ", "variable_diff_size", ": [char; 2]\n", "[..]", "- \tsize: 1\n", "+ \tsize: 2\n", "\n");
 test_diff!(variable_diff_size_multi, "- var ", "variable_diff_size_multi", ": [char; 1, 3]\n", "+ var ", "variable_diff_size_multi", ": [char; 2, 4]\n", "[..]", "- \tsize: 3\n", "+ \tsize: 8\n", "\n");
