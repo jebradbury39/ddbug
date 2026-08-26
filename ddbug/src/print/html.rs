@@ -256,6 +256,23 @@ impl<'w> HtmlPrinter<'w> {
         self.w.write_all(FOOTER.as_bytes())?;
         Ok(())
     }
+
+    fn buffer_impl(
+        &mut self,
+        line_started: bool,
+        buf: &mut Vec<u8>,
+        f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
+    ) -> Result<()> {
+        let mut p = HtmlPrinter {
+            w: buf,
+            prefix: self.prefix,
+            inline_depth: self.inline_depth,
+            line_started,
+            http: self.http,
+        };
+        f(&mut p)?;
+        Ok(())
+    }
 }
 
 impl<'w> Printer for HtmlPrinter<'w> {
@@ -268,22 +285,12 @@ impl<'w> Printer for HtmlPrinter<'w> {
         f(&mut p)
     }
 
-    /// Calls `f` to write to a temporary buffer.
     fn buffer(
         &mut self,
         buf: &mut Vec<u8>,
         f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
     ) -> Result<()> {
-        let mut p = HtmlPrinter {
-            w: buf,
-            // TODO: need to ensure these are all unchanged?
-            prefix: self.prefix,
-            inline_depth: self.inline_depth,
-            line_started: self.line_started,
-            http: self.http,
-        };
-        f(&mut p)?;
-        Ok(())
+        self.buffer_impl(self.line_started, buf, f)
     }
 
     fn write_buf(&mut self, buf: &[u8]) -> Result<()> {
@@ -355,16 +362,7 @@ impl<'w> Printer for HtmlPrinter<'w> {
         buf: &mut Vec<u8>,
         body: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
     ) -> Result<()> {
-        let mut printer = HtmlPrinter {
-            w: buf,
-            // TODO: need to ensure these are all unchanged?
-            prefix: self.prefix,
-            inline_depth: self.inline_depth,
-            line_started: false,
-            http: self.http,
-        };
-        body(&mut printer)?;
-        Ok(())
+        self.buffer_impl(false, buf, body)
     }
 
     fn indent_header(

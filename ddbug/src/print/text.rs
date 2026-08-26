@@ -36,6 +36,21 @@ impl<'w> TextPrinter<'w> {
         }
         Ok(())
     }
+
+    fn buffer_impl(
+        &mut self,
+        indent: usize,
+        buf: &mut Vec<u8>,
+        f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
+    ) -> Result<()> {
+        let mut p = TextPrinter {
+            w: buf,
+            indent,
+            prefix: self.prefix,
+            inline_depth: self.inline_depth,
+        };
+        f(&mut p)
+    }
 }
 
 impl<'w> Printer for TextPrinter<'w> {
@@ -48,19 +63,12 @@ impl<'w> Printer for TextPrinter<'w> {
         f(&mut p)
     }
 
-    /// Calls `f` to write to a temporary buffer.
     fn buffer(
         &mut self,
         buf: &mut Vec<u8>,
         f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
     ) -> Result<()> {
-        let mut p = TextPrinter {
-            w: buf,
-            indent: self.indent,
-            prefix: self.prefix,
-            inline_depth: self.inline_depth,
-        };
-        f(&mut p)
+        self.buffer_impl(self.indent, buf, f)
     }
 
     fn write_buf(&mut self, buf: &[u8]) -> Result<()> {
@@ -97,13 +105,7 @@ impl<'w> Printer for TextPrinter<'w> {
         buf: &mut Vec<u8>,
         body: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
     ) -> Result<()> {
-        let mut printer = TextPrinter {
-            w: buf,
-            indent: self.indent + 1,
-            prefix: self.prefix,
-            inline_depth: self.inline_depth,
-        };
-        body(&mut printer)
+        self.buffer_impl(self.indent + 1, buf, body)
     }
 
     fn indent_header(
