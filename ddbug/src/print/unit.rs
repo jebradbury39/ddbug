@@ -3,9 +3,8 @@ use std::cmp;
 use parser::{FileHash, Function, Range, Type, Unit, Variable};
 
 use crate::filter;
-use crate::print::{
-    self, DiffState, MergeIterator, MergeResult, Print, PrintState, SortList, ValuePrinter,
-};
+use crate::merge::{MergeIterator, MergeResult};
+use crate::print::{self, DiffState, Print, PrintState, SortList, ValuePrinter};
 use crate::{Options, Result, Sort};
 
 pub(crate) fn merged_types<'a, 'input>(

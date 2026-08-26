@@ -129,7 +129,7 @@ impl<'input> PrintHeader for Function<'input> {
         })?;
         if state.options().print_function_calls {
             state.field_collapsed("call sites", |state| state.list(unit, details.calls()))?;
-            let calls = calls(self, state.code);
+            let calls = calls(self, state.code());
             state.field_collapsed("calls", |state| state.list(&(), &calls))?;
         }
         if state.options().print_function_instructions && !self.ranges().is_empty() {
@@ -237,8 +237,8 @@ impl<'input> PrintHeader for Function<'input> {
             state.field_collapsed("call sites", |state| {
                 state.list(unit_a, details_a.calls(), unit_b, details_b.calls())
             })?;
-            let calls_a = calls(a, state.code_a);
-            let calls_b = calls(b, state.code_b);
+            let calls_a = calls(a, state.code_a());
+            let calls_b = calls(b, state.code_b());
             state.field_collapsed("calls", |state| state.list(&(), &calls_a, &(), &calls_b))?;
         }
         if state.options().print_function_instructions {
@@ -365,7 +365,7 @@ impl Print for Call {
     type Arg = ();
 
     fn print(&self, state: &mut PrintState, _arg: &()) -> Result<()> {
-        let code = state.code;
+        let code = state.code();
         let options = state.options();
         state.line(|w, hash| print_call(self, w, hash, code, options))
     }
@@ -373,8 +373,8 @@ impl Print for Call {
     fn diff(state: &mut DiffState, _arg_a: &(), a: &Self, _arg_b: &(), b: &Self) -> Result<()> {
         let options = state.options();
         state.line(
-            (a, state.code_a),
-            (b, state.code_b),
+            (a, state.code_a()),
+            (b, state.code_b()),
             |w, hash, (x, code)| print_call(x, w, hash, code, options),
         )
     }
@@ -431,7 +431,7 @@ pub(crate) fn print_instructions(
     if ranges.is_empty() {
         return Ok(());
     }
-    let code = match state.code {
+    let code = match state.code() {
         Some(x) => x,
         None => return Ok(()),
     };

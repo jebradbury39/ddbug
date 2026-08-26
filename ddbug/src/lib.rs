@@ -21,6 +21,8 @@ pub use parser::{Error, File, Result};
 
 mod code;
 mod filter;
+mod merge;
+mod shortest_path;
 
 mod print;
 pub use self::print::file::{

@@ -4,9 +4,8 @@ use parser::{File, FileHash, Function, Type, Unit, Variable};
 
 use crate::code::Code;
 use crate::filter;
-use crate::print::{
-    self, DiffState, Id, MergeIterator, MergeResult, PrintHeader, PrintState, Printer, SortList,
-};
+use crate::merge::{MergeIterator, MergeResult};
+use crate::print::{self, DiffState, Id, PrintHeader, PrintState, Printer, SortList};
 use crate::{Options, Result};
 
 fn assign_ids(file: &File, options: &Options) -> Vec<Id> {
