@@ -73,30 +73,35 @@ pub trait Printer {
         f: &mut dyn FnMut(&mut dyn ValuePrinter) -> Result<()>,
     ) -> Result<()>;
 
-    /// Calls `f` to write to a temporary buffer.
-    fn buffer(
-        &mut self,
-        buf: &mut Vec<u8>,
-        f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
-    ) -> Result<()>;
-    fn write_buf(&mut self, buf: &[u8]) -> Result<()>;
+    /// Calls `f` to write to an internal buffer.
+    ///
+    /// This is used for items that may need to be omitted if empty.
+    ///
+    /// Returns true if anything was written to the buffer.
+    fn buffer(&mut self, f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>) -> Result<bool>;
+    /// Writes the internal buffer created by the previous `buffer` or `indent_body` call.
+    fn write_buf(&mut self) -> Result<()>;
 
     fn line_break(&mut self) -> Result<()>;
 
     fn line(&mut self, label: &str, buf: &[u8]) -> Result<()>;
     fn line_diff(&mut self, label: &str, a: &[u8], b: &[u8]) -> Result<()>;
 
-    fn indent_body(
-        &mut self,
-        buf: &mut Vec<u8>,
-        body: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
-    ) -> Result<()>;
+    /// Calls `body` to write an indented body to an internal buffer.
+    ///
+    /// This is used for items that may need to be omitted if empty.
+    ///
+    /// Returns true if anything was written to the buffer.
+    fn indent_body(&mut self, body: &mut dyn FnMut(&mut dyn Printer) -> Result<()>)
+    -> Result<bool>;
+    /// Calls `header` to write the header, followed by the internal buffer created by
+    /// the previous `indent_body` call.
     fn indent_header(
         &mut self,
         collapsed: bool,
-        body: &[u8],
         header: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
     ) -> Result<()>;
+    /// Calls `header` and `body` to write the output for an item with the given `id`.
     fn indent_id(
         &mut self,
         id: usize,
@@ -229,19 +234,17 @@ impl<'a> PrintState<'a> {
         let hash = self.hash;
         let code = self.code;
         let options = self.options;
-        let mut body_buf = Vec::new();
-        self.printer.indent_body(&mut body_buf, &mut |printer| {
+        let not_empty = self.printer.indent_body(&mut |printer| {
             let mut state = PrintState::new(printer, hash, code, options);
             body(&mut state)?;
             Ok(())
         })?;
-        if !body_buf.is_empty() {
-            self.printer
-                .indent_header(collapsed, &body_buf, &mut |printer| {
-                    let mut state = PrintState::new(printer, hash, code, options);
-                    header(&mut state)?;
-                    Ok(())
-                })?;
+        if not_empty {
+            self.printer.indent_header(collapsed, &mut |printer| {
+                let mut state = PrintState::new(printer, hash, code, options);
+                header(&mut state)?;
+                Ok(())
+            })?;
         } else if !optional {
             header(self)?;
         }
@@ -429,8 +432,8 @@ impl<'a> DiffState<'a> {
         }
     }
 
-    // Write output of `f` to a temporary buffer, then only
-    // output that buffer if there were any differences.
+    /// Write output of `f` to a temporary buffer, then only
+    /// output that buffer if there were any differences.
     fn print_if_diff<F>(&mut self, mut f: F) -> Result<()>
     where
         F: FnMut(&mut DiffState) -> Result<()>,
@@ -440,9 +443,8 @@ impl<'a> DiffState<'a> {
         let code_a = self.code_a;
         let code_b = self.code_b;
         let options = self.options;
-        let mut buf = Vec::new();
         let mut diff = false;
-        self.printer.buffer(&mut buf, &mut |printer| {
+        self.printer.buffer(&mut |printer| {
             let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
             f(&mut state)?;
             diff = state.diff;
@@ -450,7 +452,7 @@ impl<'a> DiffState<'a> {
         })?;
         self.diff |= diff;
         if diff || options.html {
-            self.printer.write_buf(&buf)?;
+            self.printer.write_buf()?;
         }
         Ok(())
     }
@@ -486,9 +488,8 @@ impl<'a> DiffState<'a> {
 
         // Render the body first so that we can determine if there are differences.
         // TODO: this makes the initial HTTP load much slower than it could be.
-        let mut body_buf = Vec::new();
         let mut diff = false;
-        self.printer.indent_body(&mut body_buf, &mut |printer| {
+        self.printer.indent_body(&mut |printer| {
             printer.prefix(DiffPrefix::Equal);
             let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
             body(&mut state)?;
@@ -510,7 +511,7 @@ impl<'a> DiffState<'a> {
                 Ok(())
             },
             &mut |printer| {
-                printer.write_buf(&body_buf)?;
+                printer.write_buf()?;
                 Ok(())
             },
         )?;
@@ -518,8 +519,9 @@ impl<'a> DiffState<'a> {
         Ok(())
     }
 
-    // Output the header with an indented body.
-    // If optional is true, then only output if the body is not empty.
+    /// Output the header with an indented body.
+    ///
+    /// If optional is true, then only output if the body is not empty.
     fn indent_impl<FHeader, FBody>(
         &mut self,
         optional: bool,
@@ -539,9 +541,8 @@ impl<'a> DiffState<'a> {
 
         // Render the body first so that we can determine if there are differences
         // or if it is empty.
-        let mut body_buf = Vec::new();
         let mut diff = false;
-        self.printer.indent_body(&mut body_buf, &mut |printer| {
+        let not_empty = self.printer.indent_body(&mut |printer| {
             printer.prefix(DiffPrefix::Equal);
             let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
             body(&mut state)?;
@@ -551,22 +552,20 @@ impl<'a> DiffState<'a> {
             Ok(())
         })?;
 
-        if !body_buf.is_empty() {
-            self.printer
-                .indent_header(collapsed, &body_buf, &mut |printer| {
-                    if diff {
-                        printer.prefix(DiffPrefix::Modify);
-                    } else {
-                        printer.prefix(DiffPrefix::Equal);
-                    }
-                    let mut state =
-                        DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
-                    header(&mut state)?;
-                    if state.diff {
-                        diff = true;
-                    }
-                    Ok(())
-                })?;
+        if not_empty {
+            self.printer.indent_header(collapsed, &mut |printer| {
+                if diff {
+                    printer.prefix(DiffPrefix::Modify);
+                } else {
+                    printer.prefix(DiffPrefix::Equal);
+                }
+                let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
+                header(&mut state)?;
+                if state.diff {
+                    diff = true;
+                }
+                Ok(())
+            })?;
             self.diff |= diff;
         } else if !optional {
             header(self)?;
@@ -648,8 +647,7 @@ impl<'a> DiffState<'a> {
         let code_a = self.code_a;
         let code_b = self.code_b;
         let options = self.options;
-        let mut buf = Vec::new();
-        self.printer.buffer(&mut buf, &mut |printer| {
+        let not_empty = self.printer.buffer(&mut |printer| {
             let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
             state
                 .a()
@@ -659,8 +657,8 @@ impl<'a> DiffState<'a> {
                 .prefix(DiffPrefix::Add, &mut |state| f(state, arg_b))?;
             Ok(())
         })?;
-        if !buf.is_empty() {
-            self.printer.write_buf(&buf)?;
+        if not_empty {
+            self.printer.write_buf()?;
             self.diff = true;
         }
         Ok(())

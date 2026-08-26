@@ -5,6 +5,7 @@ use crate::{Options, Result};
 
 pub struct TextPrinter<'w> {
     w: &'w mut dyn Write,
+    buffer: Vec<u8>,
     indent: usize,
     prefix: DiffPrefix,
     inline_depth: usize,
@@ -14,6 +15,7 @@ impl<'w> TextPrinter<'w> {
     pub fn new(w: &'w mut dyn Write, options: &Options) -> Self {
         TextPrinter {
             w,
+            buffer: Vec::new(),
             indent: 0,
             prefix: DiffPrefix::None,
             inline_depth: options.inline_depth,
@@ -40,16 +42,18 @@ impl<'w> TextPrinter<'w> {
     fn buffer_impl(
         &mut self,
         indent: usize,
-        buf: &mut Vec<u8>,
         f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
+        self.buffer.clear();
         let mut p = TextPrinter {
-            w: buf,
+            w: &mut self.buffer,
+            buffer: Vec::new(),
             indent,
             prefix: self.prefix,
             inline_depth: self.inline_depth,
         };
-        f(&mut p)
+        f(&mut p)?;
+        Ok(!self.buffer.is_empty())
     }
 }
 
@@ -63,16 +67,12 @@ impl<'w> Printer for TextPrinter<'w> {
         f(&mut p)
     }
 
-    fn buffer(
-        &mut self,
-        buf: &mut Vec<u8>,
-        f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
-    ) -> Result<()> {
-        self.buffer_impl(self.indent, buf, f)
+    fn buffer(&mut self, f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>) -> Result<bool> {
+        self.buffer_impl(self.indent, f)
     }
 
-    fn write_buf(&mut self, buf: &[u8]) -> Result<()> {
-        self.w.write_all(buf)?;
+    fn write_buf(&mut self) -> Result<()> {
+        self.w.write_all(&self.buffer)?;
         Ok(())
     }
 
@@ -102,21 +102,18 @@ impl<'w> Printer for TextPrinter<'w> {
 
     fn indent_body(
         &mut self,
-        buf: &mut Vec<u8>,
         body: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
-    ) -> Result<()> {
-        self.buffer_impl(self.indent + 1, buf, body)
+    ) -> Result<bool> {
+        self.buffer_impl(self.indent + 1, body)
     }
 
     fn indent_header(
         &mut self,
         _collapsed: bool,
-        body: &[u8],
         header: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
     ) -> Result<()> {
         header(self)?;
-        self.write_buf(body)?;
-        Ok(())
+        self.write_buf()
     }
 
     fn indent_id(
@@ -126,13 +123,10 @@ impl<'w> Printer for TextPrinter<'w> {
         body: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
     ) -> Result<()> {
         header(self)?;
-        let mut printer = TextPrinter {
-            w: self.w,
-            indent: self.indent + 1,
-            prefix: self.prefix,
-            inline_depth: self.inline_depth,
-        };
-        body(&mut printer)
+        self.indent += 1;
+        let r = body(self);
+        self.indent -= 1;
+        r
     }
 
     fn indent_detail(&mut self, _id: &str, _label: &str) -> Result<()> {

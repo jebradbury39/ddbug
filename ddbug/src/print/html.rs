@@ -229,6 +229,7 @@ const FOOTER: &str = r#"</ul>
 
 pub struct HtmlPrinter<'w> {
     w: &'w mut dyn Write,
+    buffer: Vec<u8>,
     prefix: DiffPrefix,
     inline_depth: usize,
     // Hack to allow indented <ul> to be included within parent <li>.
@@ -240,6 +241,7 @@ impl<'w> HtmlPrinter<'w> {
     pub fn new(w: &'w mut dyn Write, options: &Options) -> Self {
         HtmlPrinter {
             w,
+            buffer: Vec::new(),
             prefix: DiffPrefix::None,
             inline_depth: options.inline_depth,
             line_started: false,
@@ -260,18 +262,19 @@ impl<'w> HtmlPrinter<'w> {
     fn buffer_impl(
         &mut self,
         line_started: bool,
-        buf: &mut Vec<u8>,
         f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
+        self.buffer.clear();
         let mut p = HtmlPrinter {
-            w: buf,
+            w: &mut self.buffer,
+            buffer: Vec::new(),
             prefix: self.prefix,
             inline_depth: self.inline_depth,
             line_started,
             http: self.http,
         };
         f(&mut p)?;
-        Ok(())
+        Ok(!self.buffer.is_empty())
     }
 }
 
@@ -285,16 +288,12 @@ impl<'w> Printer for HtmlPrinter<'w> {
         f(&mut p)
     }
 
-    fn buffer(
-        &mut self,
-        buf: &mut Vec<u8>,
-        f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
-    ) -> Result<()> {
-        self.buffer_impl(self.line_started, buf, f)
+    fn buffer(&mut self, f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>) -> Result<bool> {
+        self.buffer_impl(self.line_started, f)
     }
 
-    fn write_buf(&mut self, buf: &[u8]) -> Result<()> {
-        self.w.write_all(buf)?;
+    fn write_buf(&mut self) -> Result<()> {
+        self.w.write_all(&self.buffer)?;
         Ok(())
     }
 
@@ -359,16 +358,14 @@ impl<'w> Printer for HtmlPrinter<'w> {
 
     fn indent_body(
         &mut self,
-        buf: &mut Vec<u8>,
         body: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
-    ) -> Result<()> {
-        self.buffer_impl(false, buf, body)
+    ) -> Result<bool> {
+        self.buffer_impl(false, body)
     }
 
     fn indent_header(
         &mut self,
         collapsed: bool,
-        body: &[u8],
         header: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
     ) -> Result<()> {
         debug_assert!(!self.line_started);
@@ -381,7 +378,7 @@ impl<'w> Printer for HtmlPrinter<'w> {
         } else {
             writeln!(self.w, "<ul>")?;
         }
-        self.write_buf(body)?;
+        self.write_buf()?;
         writeln!(self.w, "</ul></li>")?;
         Ok(())
     }
