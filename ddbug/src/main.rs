@@ -545,12 +545,12 @@ where
     let stdout = std::io::stdout();
     let mut writer = BufWriter::new(stdout.lock());
     if options.html {
-        let mut printer = ddbug::HtmlPrinter::new(&mut writer, options);
+        let mut printer = ddbug::HtmlPrinter::new(&mut writer, options.http);
         printer.begin()?;
         f(&mut printer)?;
         printer.end()
     } else {
-        let mut printer = ddbug::TextPrinter::new(&mut writer, options);
+        let mut printer = ddbug::TextPrinter::new(&mut writer);
         f(&mut printer)
     }
 }
@@ -565,7 +565,7 @@ struct ServeDiffState {
 fn serve_diff_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &ServeDiffState) {
     match path.next() {
         Some("") => {
-            let mut printer = ddbug::HtmlPrinter::new(writer, &state.options);
+            let mut printer = ddbug::HtmlPrinter::new(writer, true);
             printer.begin().unwrap();
             ddbug::diff(
                 &mut printer,
@@ -581,7 +581,7 @@ fn serve_diff_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &Ser
             if let Some(id) = id {
                 match path.next() {
                     None => {
-                        let mut printer = ddbug::HtmlPrinter::new(writer, &state.options);
+                        let mut printer = ddbug::HtmlPrinter::new(writer, true);
                         ddbug::diff_id(
                             id,
                             state.file_a.file(),
@@ -608,7 +608,7 @@ struct ServePrintState {
 fn serve_print_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &ServePrintState) {
     match path.next() {
         Some("") => {
-            let mut printer = ddbug::HtmlPrinter::new(writer, &state.options);
+            let mut printer = ddbug::HtmlPrinter::new(writer, true);
             printer.begin().unwrap();
             ddbug::print(state.file.file(), &mut printer, &state.options).unwrap();
             printer.end().unwrap();
@@ -618,7 +618,7 @@ fn serve_print_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &Se
             if let Some(id) = id {
                 match path.next() {
                     None => {
-                        let mut printer = ddbug::HtmlPrinter::new(writer, &state.options);
+                        let mut printer = ddbug::HtmlPrinter::new(writer, true);
                         ddbug::print_id(
                             id,
                             None,
@@ -636,7 +636,7 @@ fn serve_print_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &Se
                         }
                     }
                     Some(detail) => {
-                        let mut printer = ddbug::HtmlPrinter::new(writer, &state.options);
+                        let mut printer = ddbug::HtmlPrinter::new(writer, true);
                         ddbug::print_id(
                             id,
                             Some(detail),
@@ -662,7 +662,7 @@ struct ServeBloatState {
 fn serve_bloat_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &ServeBloatState) {
     match path.next() {
         Some("") => {
-            let mut printer = ddbug::HtmlPrinter::new(writer, &state.options);
+            let mut printer = ddbug::HtmlPrinter::new(writer, true);
             printer.begin().unwrap();
             ddbug::bloat(
                 state.file.file(),
@@ -676,7 +676,7 @@ fn serve_bloat_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &Se
         Some("id") => {
             let id = path.next().and_then(|id| str::parse::<usize>(id).ok());
             if let Some(id) = id {
-                let mut printer = ddbug::HtmlPrinter::new(writer, &state.options);
+                let mut printer = ddbug::HtmlPrinter::new(writer, true);
                 ddbug::bloat_id(
                     id,
                     state.file.file(),

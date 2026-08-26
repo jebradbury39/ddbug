@@ -9,7 +9,7 @@ fn print(fixture: &Fixture, name: &str, expect: &str) {
     let mut options = options();
     options.unit(fixture.unit).name(name);
     let mut output = Vec::new();
-    let mut printer = ddbug::TextPrinter::new(&mut output, &options);
+    let mut printer = ddbug::TextPrinter::new(&mut output);
     ddbug::print(file.file(), &mut printer, &options).unwrap();
     let output = String::from_utf8(output).unwrap();
     if !equal(&output, expect) {
@@ -27,7 +27,7 @@ fn diff(fixture: &Fixture, name: &str, expect: &str) {
     let mut options = options();
     options.unit(fixture.unit).name(name);
     let mut diff = Vec::new();
-    let mut printer = ddbug::TextPrinter::new(&mut diff, &options);
+    let mut printer = ddbug::TextPrinter::new(&mut diff);
     ddbug::diff(&mut printer, file1.file(), file2.file(), &options).unwrap();
     let diff = String::from_utf8(diff).unwrap();
     if !equal(&diff, expect) {

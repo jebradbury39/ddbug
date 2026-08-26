@@ -78,9 +78,6 @@ pub trait Printer {
     fn prefix(&mut self, prefix: DiffPrefix);
     fn get_prefix(&self) -> DiffPrefix;
 
-    fn inline_begin(&mut self) -> bool;
-    fn inline_end(&mut self);
-
     fn instruction(&mut self, address: Option<u64>, mnemonic: &str, buf: &[u8]) -> Result<()>;
 }
 

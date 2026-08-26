@@ -3,7 +3,7 @@ use std::io::Write;
 use marksman_escape::Escape;
 
 use super::{DiffPrefix, Printer, ValuePrinter};
-use crate::{Options, Result};
+use crate::Result;
 
 const HEADER: &str = r##"<!DOCTYPE html>
 <html>
@@ -231,21 +231,19 @@ pub struct HtmlPrinter<'w> {
     w: &'w mut dyn Write,
     buffer: Vec<u8>,
     prefix: DiffPrefix,
-    inline_depth: usize,
     // Hack to allow indented <ul> to be included within parent <li>.
     line_started: bool,
     http: bool,
 }
 
 impl<'w> HtmlPrinter<'w> {
-    pub fn new(w: &'w mut dyn Write, options: &Options) -> Self {
+    pub fn new(w: &'w mut dyn Write, http: bool) -> Self {
         HtmlPrinter {
             w,
             buffer: Vec::new(),
             prefix: DiffPrefix::None,
-            inline_depth: options.inline_depth,
             line_started: false,
-            http: options.http,
+            http,
         }
     }
 
@@ -269,7 +267,6 @@ impl<'w> HtmlPrinter<'w> {
             w: &mut self.buffer,
             buffer: Vec::new(),
             prefix: self.prefix,
-            inline_depth: self.inline_depth,
             line_started,
             http: self.http,
         };
@@ -424,19 +421,6 @@ impl<'w> Printer for HtmlPrinter<'w> {
 
     fn get_prefix(&self) -> DiffPrefix {
         self.prefix
-    }
-
-    fn inline_begin(&mut self) -> bool {
-        if self.inline_depth == 0 {
-            false
-        } else {
-            self.inline_depth -= 1;
-            true
-        }
-    }
-
-    fn inline_end(&mut self) {
-        self.inline_depth += 1;
     }
 
     fn instruction(&mut self, address: Option<u64>, mnemonic: &str, buf: &[u8]) -> Result<()> {

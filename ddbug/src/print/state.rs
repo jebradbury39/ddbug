@@ -8,6 +8,7 @@ use crate::{Options, Result};
 /// The `PrintState` fields that need to be captured by closures.
 #[derive(Clone, Copy)]
 struct PrintCapture<'a> {
+    inline_depth: usize,
     hash: &'a FileHash<'a>,
     code: Option<&'a Code<'a>>,
     options: &'a Options,
@@ -20,6 +21,7 @@ impl<'a> PrintCapture<'a> {
     {
         PrintState {
             printer,
+            inline_depth: self.inline_depth,
             hash: self.hash,
             code: self.code,
             options: self.options,
@@ -30,6 +32,8 @@ impl<'a> PrintCapture<'a> {
 pub(crate) struct PrintState<'a> {
     // 'w lifetime needed due to invariance
     printer: &'a mut dyn Printer,
+
+    inline_depth: usize,
 
     // The remaining fields contain information that is commonly needed in print methods.
     hash: &'a FileHash<'a>,
@@ -55,6 +59,7 @@ impl<'a> PrintState<'a> {
 
     fn capture(&self) -> PrintCapture<'a> {
         PrintCapture {
+            inline_depth: self.inline_depth,
             hash: self.hash,
             code: self.code,
             options: self.options,
@@ -69,6 +74,7 @@ impl<'a> PrintState<'a> {
     ) -> Self {
         PrintState {
             printer,
+            inline_depth: options.inline_depth,
             hash,
             code,
             options,
@@ -165,13 +171,13 @@ impl<'a> PrintState<'a> {
     where
         F: FnMut(&mut PrintState) -> Result<()>,
     {
-        if self.printer.inline_begin() {
-            let ret = f(self);
-            self.printer.inline_end();
-            ret
-        } else {
-            Ok(())
+        if self.inline_depth == 0 {
+            return Ok(());
         }
+        self.inline_depth -= 1;
+        let r = f(self);
+        self.inline_depth += 1;
+        r
     }
 
     fn prefix(
@@ -256,6 +262,7 @@ impl<'a> PrintState<'a> {
 /// The `DiffState` fields that need to be captured by closures.
 #[derive(Clone, Copy)]
 struct DiffCapture<'a> {
+    inline_depth: usize,
     hash_a: &'a FileHash<'a>,
     hash_b: &'a FileHash<'a>,
     code_a: Option<&'a Code<'a>>,
@@ -271,6 +278,7 @@ impl<'a> DiffCapture<'a> {
         DiffState {
             printer,
             diff: false,
+            inline_depth: self.inline_depth,
             hash_a: self.hash_a,
             hash_b: self.hash_b,
             code_a: self.code_a,
@@ -286,6 +294,8 @@ pub(crate) struct DiffState<'a> {
     // True if DiffPrefix::Delete or DiffPrefix::Add was printed.
     diff: bool,
 
+    inline_depth: usize,
+
     // The remaining fields contain information that is commonly needed in print methods.
     hash_a: &'a FileHash<'a>,
     hash_b: &'a FileHash<'a>,
@@ -297,12 +307,24 @@ pub(crate) struct DiffState<'a> {
 impl<'a> DiffState<'a> {
     #[inline]
     fn a(&'_ mut self) -> PrintState<'_> {
-        PrintState::new(self.printer, self.hash_a, self.code_a, self.options)
+        PrintState {
+            printer: self.printer,
+            inline_depth: self.inline_depth,
+            hash: self.hash_a,
+            code: self.code_a,
+            options: self.options,
+        }
     }
 
     #[inline]
     fn b(&'_ mut self) -> PrintState<'_> {
-        PrintState::new(self.printer, self.hash_b, self.code_b, self.options)
+        PrintState {
+            printer: self.printer,
+            inline_depth: self.inline_depth,
+            hash: self.hash_b,
+            code: self.code_b,
+            options: self.options,
+        }
     }
 
     #[inline]
@@ -332,6 +354,7 @@ impl<'a> DiffState<'a> {
 
     fn capture(&self) -> DiffCapture<'a> {
         DiffCapture {
+            inline_depth: self.inline_depth,
             hash_a: self.hash_a,
             hash_b: self.hash_b,
             code_a: self.code_a,
@@ -351,6 +374,7 @@ impl<'a> DiffState<'a> {
         DiffState {
             printer,
             diff: false,
+            inline_depth: options.inline_depth,
             hash_a,
             hash_b,
             code_a,
@@ -522,13 +546,13 @@ impl<'a> DiffState<'a> {
     where
         F: FnMut(&mut DiffState) -> Result<()>,
     {
-        if self.printer.inline_begin() {
-            let ret = f(self);
-            self.printer.inline_end();
-            ret
-        } else {
-            Ok(())
+        if self.inline_depth == 0 {
+            return Ok(());
         }
+        self.inline_depth -= 1;
+        let r = f(self);
+        self.inline_depth += 1;
+        r
     }
 
     pub fn prefix_delete<F>(&mut self, mut f: F) -> Result<()>

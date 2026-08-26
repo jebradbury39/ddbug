@@ -1,24 +1,22 @@
 use std::io::Write;
 
 use super::{DiffPrefix, Printer, ValuePrinter};
-use crate::{Options, Result};
+use crate::Result;
 
 pub struct TextPrinter<'w> {
     w: &'w mut dyn Write,
     buffer: Vec<u8>,
     indent: usize,
     prefix: DiffPrefix,
-    inline_depth: usize,
 }
 
 impl<'w> TextPrinter<'w> {
-    pub fn new(w: &'w mut dyn Write, options: &Options) -> Self {
+    pub fn new(w: &'w mut dyn Write) -> Self {
         TextPrinter {
             w,
             buffer: Vec::new(),
             indent: 0,
             prefix: DiffPrefix::None,
-            inline_depth: options.inline_depth,
         }
     }
 
@@ -50,7 +48,6 @@ impl<'w> TextPrinter<'w> {
             buffer: Vec::new(),
             indent,
             prefix: self.prefix,
-            inline_depth: self.inline_depth,
         };
         f(&mut p)?;
         Ok(!self.buffer.is_empty())
@@ -139,19 +136,6 @@ impl<'w> Printer for TextPrinter<'w> {
 
     fn get_prefix(&self) -> DiffPrefix {
         self.prefix
-    }
-
-    fn inline_begin(&mut self) -> bool {
-        if self.inline_depth == 0 {
-            false
-        } else {
-            self.inline_depth -= 1;
-            true
-        }
-    }
-
-    fn inline_end(&mut self) {
-        self.inline_depth += 1;
     }
 
     fn instruction(&mut self, address: Option<u64>, mnemonic: &str, buf: &[u8]) -> Result<()> {
