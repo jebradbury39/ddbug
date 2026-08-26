@@ -404,15 +404,17 @@ impl<'w> Printer for HtmlPrinter<'w> {
         Ok(())
     }
 
-    fn indent_detail(&mut self, id: &str, label: &str) -> Result<()> {
-        debug_assert!(self.http);
+    fn indent_detail(&mut self, detail: &str, label: &str) -> Result<bool> {
+        if !self.http {
+            return Ok(false);
+        }
         debug_assert!(!self.line_started);
-        write!(self.w, "<li class=\"detail\" data-detail=\"{}\">", id,)?;
+        write!(self.w, "<li class=\"detail\" data-detail=\"{}\">", detail)?;
         self.line_started = true;
         self.line(label, &[])?;
         self.line_started = false;
         writeln!(self.w, "</li>")?;
-        Ok(())
+        Ok(true)
     }
 
     fn prefix(&mut self, prefix: DiffPrefix) {

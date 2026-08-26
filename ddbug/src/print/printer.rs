@@ -73,7 +73,14 @@ pub trait Printer {
         header: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
         body: &mut dyn FnMut(&mut dyn Printer) -> Result<()>,
     ) -> Result<()>;
-    fn indent_detail(&mut self, id: &str, label: &str) -> Result<()>;
+
+    /// Optionally prints a labelled reference to a block of detail information.
+    ///
+    /// `detail` is the parameter for [`crate::print_id`], with the `id` being
+    /// determined by nesting.
+    ///
+    /// Returns false if the printer does not support lazy detail information.
+    fn indent_detail(&mut self, detail: &str, label: &str) -> Result<bool>;
 
     fn prefix(&mut self, prefix: DiffPrefix);
     fn get_prefix(&self) -> DiffPrefix;

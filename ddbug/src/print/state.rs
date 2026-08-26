@@ -99,15 +99,14 @@ impl<'a> PrintState<'a> {
         )
     }
 
-    pub fn field_detail<FBody>(&mut self, id: &str, label: &str, body: FBody) -> Result<()>
+    pub fn field_detail<FBody>(&mut self, detail: &str, label: &str, body: FBody) -> Result<()>
     where
         FBody: FnMut(&mut PrintState) -> Result<()>,
     {
-        if self.options.http {
-            self.printer.indent_detail(id, label)
-        } else {
-            self.indent_impl(true, true, |state| state.label(label), body)
+        if !self.printer.indent_detail(detail, label)? {
+            self.indent_impl(true, true, |state| state.label(label), body)?;
         }
+        Ok(())
     }
 
     // Output the header with an indented body.
