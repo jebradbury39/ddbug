@@ -52,7 +52,6 @@ pub struct Options {
     pub print_variable_locations: bool,
     pub inline_depth: usize,
     pub html: bool,
-    pub http: bool,
 
     pub category_file: bool,
     pub category_unit: bool,

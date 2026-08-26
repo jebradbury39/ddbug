@@ -246,13 +246,14 @@ fn main() {
         ..Default::default()
     };
 
+    let mut http = false;
     if let Some(value) = matches.get_one::<String>(OPT_OUTPUT) {
         match value.as_str() {
             OPT_OUTPUT_TEXT => options.html = false,
             OPT_OUTPUT_HTML => options.html = true,
             OPT_OUTPUT_HTTP => {
+                http = true;
                 options.html = true;
-                options.http = true;
                 options.inline_depth = 100;
                 options.print_source = true;
                 options.print_function_calls = true;
@@ -457,7 +458,7 @@ fn main() {
                 Ok(file_b) => {
                     if let Err(e) = {
                         let index = ddbug::diff_index(file_a.file(), file_b.file(), &options);
-                        if options.http {
+                        if http {
                             let state = ServeDiffState {
                                 file_a,
                                 file_b,
@@ -477,7 +478,7 @@ fn main() {
     } else if let Some(path) = matches.get_one::<String>(OPT_BLOAT) {
         if let Err(e) = ddbug::File::parse(path.to_string()).and_then(|file| {
             let index = ddbug::bloat_index(file.file(), &options);
-            if options.http {
+            if http {
                 let state = ServeBloatState {
                     file,
                     options,
@@ -495,7 +496,7 @@ fn main() {
 
         if let Err(e) = ddbug::File::parse(path.to_string()).and_then(|file| {
             let index = ddbug::print_index(file.file(), &options);
-            if options.http {
+            if http {
                 let state = ServePrintState {
                     file,
                     options,
@@ -545,7 +546,7 @@ where
     let stdout = std::io::stdout();
     let mut writer = BufWriter::new(stdout.lock());
     if options.html {
-        let mut printer = ddbug::HtmlPrinter::new(&mut writer, options.http);
+        let mut printer = ddbug::HtmlPrinter::new(&mut writer, false);
         printer.begin()?;
         f(&mut printer)?;
         printer.end()
