@@ -5,6 +5,28 @@ use crate::merge::{MergeIterator, MergeResult};
 use crate::print::{DiffList, DiffPrefix, Print, Printer, SortList, ValuePrinter};
 use crate::{Options, Result};
 
+/// The `PrintState` fields that need to be captured by closures.
+#[derive(Clone, Copy)]
+struct PrintCapture<'a> {
+    hash: &'a FileHash<'a>,
+    code: Option<&'a Code<'a>>,
+    options: &'a Options,
+}
+
+impl<'a> PrintCapture<'a> {
+    fn state<'b>(self, printer: &'b mut dyn Printer) -> PrintState<'b>
+    where
+        'a: 'b,
+    {
+        PrintState {
+            printer,
+            hash: self.hash,
+            code: self.code,
+            options: self.options,
+        }
+    }
+}
+
 pub(crate) struct PrintState<'a> {
     // 'w lifetime needed due to invariance
     printer: &'a mut dyn Printer,
@@ -31,6 +53,14 @@ impl<'a> PrintState<'a> {
         self.options
     }
 
+    fn capture(&self) -> PrintCapture<'a> {
+        PrintCapture {
+            hash: self.hash,
+            code: self.code,
+            options: self.options,
+        }
+    }
+
     pub fn new(
         printer: &'a mut dyn Printer,
         hash: &'a FileHash<'a>,
@@ -55,21 +85,11 @@ impl<'a> PrintState<'a> {
         FHeader: FnMut(&mut PrintState) -> Result<()>,
         FBody: FnMut(&mut PrintState) -> Result<()>,
     {
-        let hash = self.hash;
-        let code = self.code;
-        let options = self.options;
+        let capture = self.capture();
         self.printer.indent_id(
             id,
-            &mut |printer| {
-                let mut state = PrintState::new(printer, hash, code, options);
-                header(&mut state)?;
-                Ok(())
-            },
-            &mut |printer| {
-                let mut state = PrintState::new(printer, hash, code, options);
-                body(&mut state)?;
-                Ok(())
-            },
+            &mut |printer| header(&mut capture.state(printer)),
+            &mut |printer| body(&mut capture.state(printer)),
         )
     }
 
@@ -97,19 +117,13 @@ impl<'a> PrintState<'a> {
         FHeader: FnMut(&mut PrintState) -> Result<()>,
         FBody: FnMut(&mut PrintState) -> Result<()>,
     {
-        let hash = self.hash;
-        let code = self.code;
-        let options = self.options;
-        let not_empty = self.printer.indent_body(&mut |printer| {
-            let mut state = PrintState::new(printer, hash, code, options);
-            body(&mut state)?;
-            Ok(())
-        })?;
+        let capture = self.capture();
+        let not_empty = self
+            .printer
+            .indent_body(&mut |printer| body(&mut capture.state(printer)))?;
         if not_empty {
             self.printer.indent_header(collapsed, &mut |printer| {
-                let mut state = PrintState::new(printer, hash, code, options);
-                header(&mut state)?;
-                Ok(())
+                header(&mut capture.state(printer))
             })?;
         } else if !optional {
             header(self)?;
@@ -239,6 +253,33 @@ impl<'a> PrintState<'a> {
     }
 }
 
+/// The `DiffState` fields that need to be captured by closures.
+#[derive(Clone, Copy)]
+struct DiffCapture<'a> {
+    hash_a: &'a FileHash<'a>,
+    hash_b: &'a FileHash<'a>,
+    code_a: Option<&'a Code<'a>>,
+    code_b: Option<&'a Code<'a>>,
+    options: &'a Options,
+}
+
+impl<'a> DiffCapture<'a> {
+    fn state<'b>(self, printer: &'b mut dyn Printer) -> DiffState<'b>
+    where
+        'a: 'b,
+    {
+        DiffState {
+            printer,
+            diff: false,
+            hash_a: self.hash_a,
+            hash_b: self.hash_b,
+            code_a: self.code_a,
+            code_b: self.code_b,
+            options: self.options,
+        }
+    }
+}
+
 pub(crate) struct DiffState<'a> {
     printer: &'a mut dyn Printer,
 
@@ -289,6 +330,16 @@ impl<'a> DiffState<'a> {
         self.options
     }
 
+    fn capture(&self) -> DiffCapture<'a> {
+        DiffCapture {
+            hash_a: self.hash_a,
+            hash_b: self.hash_b,
+            code_a: self.code_a,
+            code_b: self.code_b,
+            options: self.options,
+        }
+    }
+
     pub fn new(
         printer: &'a mut dyn Printer,
         hash_a: &'a FileHash<'a>,
@@ -314,20 +365,16 @@ impl<'a> DiffState<'a> {
     where
         F: FnMut(&mut DiffState) -> Result<()>,
     {
-        let hash_a = self.hash_a;
-        let hash_b = self.hash_b;
-        let code_a = self.code_a;
-        let code_b = self.code_b;
-        let options = self.options;
+        let capture = self.capture();
         let mut diff = false;
         self.printer.buffer(&mut |printer| {
-            let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
+            let mut state = capture.state(printer);
             f(&mut state)?;
             diff = state.diff;
             Ok(())
         })?;
         self.diff |= diff;
-        if diff || options.html {
+        if diff || self.options.html {
             self.printer.write_buf()?;
         }
         Ok(())
@@ -356,18 +403,14 @@ impl<'a> DiffState<'a> {
         FHeader: FnMut(&mut DiffState) -> Result<()>,
         FBody: FnMut(&mut DiffState) -> Result<()>,
     {
-        let hash_a = self.hash_a;
-        let hash_b = self.hash_b;
-        let code_a = self.code_a;
-        let code_b = self.code_b;
-        let options = self.options;
+        let capture = self.capture();
 
         // Render the body first so that we can determine if there are differences.
         // TODO: this makes the initial HTTP load much slower than it could be.
         let mut diff = false;
         self.printer.indent_body(&mut |printer| {
             printer.prefix(DiffPrefix::Equal);
-            let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
+            let mut state = capture.state(printer);
             body(&mut state)?;
             diff |= state.diff;
             Ok(())
@@ -381,7 +424,7 @@ impl<'a> DiffState<'a> {
                 } else {
                     printer.prefix(DiffPrefix::Equal);
                 }
-                let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
+                let mut state = capture.state(printer);
                 header(&mut state)?;
                 diff |= state.diff;
                 Ok(())
@@ -409,18 +452,14 @@ impl<'a> DiffState<'a> {
         FHeader: FnMut(&mut DiffState) -> Result<()>,
         FBody: FnMut(&mut DiffState) -> Result<()>,
     {
-        let hash_a = self.hash_a;
-        let hash_b = self.hash_b;
-        let code_a = self.code_a;
-        let code_b = self.code_b;
-        let options = self.options;
+        let capture = self.capture();
 
         // Render the body first so that we can determine if there are differences
         // or if it is empty.
         let mut diff = false;
         let not_empty = self.printer.indent_body(&mut |printer| {
             printer.prefix(DiffPrefix::Equal);
-            let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
+            let mut state = capture.state(printer);
             body(&mut state)?;
             if state.diff {
                 diff = true;
@@ -435,7 +474,7 @@ impl<'a> DiffState<'a> {
                 } else {
                     printer.prefix(DiffPrefix::Equal);
                 }
-                let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
+                let mut state = capture.state(printer);
                 header(&mut state)?;
                 if state.diff {
                     diff = true;
@@ -518,13 +557,9 @@ impl<'a> DiffState<'a> {
         F: FnMut(&mut PrintState, T) -> Result<()>,
         T: Copy,
     {
-        let hash_a = self.hash_a;
-        let hash_b = self.hash_b;
-        let code_a = self.code_a;
-        let code_b = self.code_b;
-        let options = self.options;
+        let capture = self.capture();
         let not_empty = self.printer.buffer(&mut |printer| {
-            let mut state = DiffState::new(printer, hash_a, hash_b, code_a, code_b, options);
+            let mut state = capture.state(printer);
             state
                 .a()
                 .prefix(DiffPrefix::Delete, &mut |state| f(state, arg_a))?;
