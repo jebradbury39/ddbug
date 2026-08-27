@@ -480,7 +480,7 @@ fn main() {
         }
     } else if let Some(path) = matches.get_one::<String>(OPT_BLOAT) {
         if let Err(e) = ddbug::File::parse(path.to_string(), arena).and_then(|file| {
-            let index = ddbug::bloat_index(&file, &options);
+            let index = ddbug::BloatIndex::new(&file, &options);
             if http {
                 let state = ServeBloatState {
                     file,

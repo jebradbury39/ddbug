@@ -17,6 +17,7 @@ mod state;
 pub(crate) use state::{DiffState, PrintState};
 
 pub(crate) mod base_type;
+pub(crate) mod bloat;
 pub(crate) mod enumeration;
 pub(crate) mod file;
 pub(crate) mod function;

@@ -25,9 +25,9 @@ mod merge;
 mod shortest_path;
 
 mod print;
+pub use self::print::bloat::{BloatIndex, bloat, bloat_id};
 pub use self::print::file::{
-    BloatIndex, DiffIndex, PrintIndex, bloat, bloat_id, bloat_index, diff, diff_id, diff_index,
-    print, print_id, print_index, print_parent,
+    DiffIndex, PrintIndex, diff, diff_id, diff_index, print, print_id, print_index, print_parent,
 };
 pub use self::print::{DiffPrefix, HtmlPrinter, Id, Printer, TextPrinter};
 
