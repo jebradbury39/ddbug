@@ -523,7 +523,7 @@ pub fn diff_id(
     options: &Options,
     index: &DiffIndex,
 ) -> Option<()> {
-    let id = index.ids.get(id).unwrap();
+    let id = index.ids.get(id)?;
     match *id {
         (
             Id::Unit {
