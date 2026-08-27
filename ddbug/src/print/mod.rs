@@ -11,7 +11,7 @@ mod html;
 pub use html::HtmlPrinter;
 
 mod printer;
-pub use printer::{DiffPrefix, Id, Printer, ValuePrinter};
+pub use printer::{DiffPrefix, Printer, ValuePrinter};
 
 mod state;
 pub(crate) use state::{DiffState, PrintState};
@@ -22,6 +22,7 @@ pub(crate) mod enumeration;
 pub(crate) mod file;
 pub(crate) mod function;
 pub(crate) mod function_call;
+pub(crate) mod id;
 pub(crate) mod inherit;
 pub(crate) mod inlined_function;
 pub(crate) mod local_variable;

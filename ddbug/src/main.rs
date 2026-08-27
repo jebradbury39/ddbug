@@ -460,7 +460,7 @@ fn main() {
                 Err(e) => error!("{}: {}", path_b, e),
                 Ok(file_b) => {
                     if let Err(e) = {
-                        let index = ddbug::diff_index(&file_a, &file_b, &options);
+                        let index = ddbug::DiffIndex::new(&file_a, &file_b, &options);
                         if http {
                             let state = ServeDiffState {
                                 file_a,
@@ -498,7 +498,7 @@ fn main() {
         let path = matches.get_one::<String>(OPT_FILE).unwrap();
 
         if let Err(e) = ddbug::File::parse(path.to_string(), arena).and_then(|file| {
-            let index = ddbug::print_index(&file, &options);
+            let index = ddbug::PrintIndex::new(&file, &options);
             if http {
                 let state = ServePrintState {
                     file,
@@ -627,8 +627,7 @@ fn serve_print_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &Se
                         );
                     }
                     Some("parent") => {
-                        if let Some(parent_id) = ddbug::print_parent(id, &state.file, &state.index)
-                        {
+                        if let Some(parent_id) = state.index.parent(id, &state.file) {
                             write!(writer, "{}", parent_id).unwrap();
                         }
                     }

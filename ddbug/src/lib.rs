@@ -24,12 +24,14 @@ mod filter;
 mod merge;
 mod shortest_path;
 
+mod index;
+pub use index::{DiffIndex, Id, PrintIndex};
+
 mod print;
 pub use self::print::bloat::{BloatIndex, bloat, bloat_id};
-pub use self::print::file::{
-    DiffIndex, PrintIndex, diff, diff_id, diff_index, print, print_id, print_index, print_parent,
-};
-pub use self::print::{DiffPrefix, HtmlPrinter, Id, Printer, TextPrinter};
+pub use self::print::file::{diff, print};
+pub use self::print::id::{diff_id, print_id};
+pub use self::print::{DiffPrefix, HtmlPrinter, Printer, TextPrinter};
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sort {

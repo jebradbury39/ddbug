@@ -11,26 +11,6 @@ pub enum DiffPrefix {
     Modify,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum Id {
-    None,
-    Unit {
-        unit_index: usize,
-    },
-    Type {
-        unit_index: usize,
-        type_index: usize,
-    },
-    Function {
-        unit_index: usize,
-        function_index: usize,
-    },
-    Variable {
-        unit_index: usize,
-        variable_index: usize,
-    },
-}
-
 pub trait Printer {
     fn value(
         &mut self,

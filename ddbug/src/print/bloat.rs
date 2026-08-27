@@ -3,11 +3,12 @@ use std::collections::HashMap;
 use parser::{File, FileHash};
 
 use crate::code::Code;
-use crate::print::{self, Id, PrintState, Printer, file};
+use crate::index::{Id, PrintIndex};
+use crate::print::{self, PrintState, Printer};
 use crate::{Options, Result};
 
 pub struct BloatIndex {
-    ids: Vec<Id>,
+    index: PrintIndex,
     function_totals: Vec<(FunctionId, FunctionTotal)>,
     callers: HashMap<u64, Vec<Caller>>,
 }
@@ -34,7 +35,7 @@ struct Caller {
 
 impl BloatIndex {
     pub fn new(file: &File, options: &Options) -> BloatIndex {
-        let ids = file::assign_ids(file, options);
+        let index = PrintIndex::new(file, options);
         let code = Code::new(file);
 
         // Build a list of copies of functions.
@@ -79,7 +80,7 @@ impl BloatIndex {
         });
 
         BloatIndex {
-            ids,
+            index,
             function_totals,
             callers,
         }
@@ -168,8 +169,7 @@ pub fn bloat_id(
     options: &Options,
     index: &BloatIndex,
 ) -> Option<()> {
-    let id = index.ids.get(id)?;
-    match *id {
+    match index.index.get(id)? {
         Id::Function {
             unit_index,
             function_index,
