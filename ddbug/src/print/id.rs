@@ -1,25 +1,12 @@
-use parser::{File, FileHash};
+use crate::index::Id;
+use crate::print::{self, DiffState, PrintHeader, PrintState};
 
-use crate::Options;
-use crate::code::Code;
-use crate::index::{DiffIndex, Id, PrintIndex};
-use crate::print::{self, DiffState, PrintHeader, PrintState, Printer};
-
-pub fn print_id(
-    id: usize,
-    detail: Option<&str>,
-    file: &File,
-    printer: &mut dyn Printer,
-    options: &Options,
-    index: &PrintIndex,
-) -> Option<()> {
-    match index.get(id)? {
+pub(crate) fn print_id(id: Id, detail: Option<&str>, state: &mut PrintState) -> Option<()> {
+    let file = state.hash().file;
+    match id {
         Id::Unit { unit_index } => {
             let unit = file.units().get(unit_index)?;
-            let hash = FileHash::new(file);
-            let code = Code::new(file);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
-            print::unit::print_body(unit, &mut state).ok()
+            print::unit::print_body(unit, state).ok()
         }
         Id::Type {
             unit_index,
@@ -27,11 +14,8 @@ pub fn print_id(
         } => {
             let unit = file.units().get(unit_index)?;
             let ty = unit.types().get(type_index)?;
-            let hash = FileHash::new(file);
-            let code = Code::new(file);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
             let kind = print::types::kind(ty).ok()?;
-            kind.print_body(&mut state, unit).ok()
+            kind.print_body(state, unit).ok()
         }
         Id::Function {
             unit_index,
@@ -39,14 +23,11 @@ pub fn print_id(
         } => {
             let unit = file.units().get(unit_index)?;
             let function = unit.functions().get(function_index)?;
-            let hash = FileHash::new(file);
-            let code = Code::new(file);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
             match detail {
-                None => function.print_body(&mut state, unit).ok(),
+                None => function.print_body(state, unit).ok(),
                 Some("code") => {
                     let details = function.details(state.hash());
-                    print::function::print_instructions(&mut state, function, &details).ok()
+                    print::function::print_instructions(state, function, &details).ok()
                 }
                 _ => None,
             }
@@ -57,24 +38,21 @@ pub fn print_id(
         } => {
             let unit = file.units().get(unit_index)?;
             let variable = unit.variables().get(variable_index)?;
-            let hash = FileHash::new(file);
-            let code = Code::new(file);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
-            variable.print_body(&mut state, unit).ok()
+            variable.print_body(state, unit).ok()
         }
         _ => None,
     }
 }
 
-pub fn diff_id(
-    id: usize,
-    file_a: &File,
-    file_b: &File,
-    printer: &mut dyn Printer,
-    options: &Options,
-    index: &DiffIndex,
+pub(crate) fn diff_id(
+    id: (Id, Id),
+    // TODO
+    _detail: Option<&str>,
+    state: &mut DiffState,
 ) -> Option<()> {
-    match index.get(id)? {
+    let file_a = state.hash_a().file;
+    let file_b = state.hash_b().file;
+    match id {
         (
             Id::Unit {
                 unit_index: unit_index_a,
@@ -85,33 +63,15 @@ pub fn diff_id(
         ) => {
             let unit_a = file_a.units().get(unit_index_a)?;
             let unit_b = file_b.units().get(unit_index_b)?;
-            let hash_a = FileHash::new(file_a);
-            let hash_b = FileHash::new(file_b);
-            let code_a = Code::new(file_a);
-            let code_b = Code::new(file_b);
-            let mut state = DiffState::new(
-                printer,
-                &hash_a,
-                &hash_b,
-                code_a.as_ref(),
-                code_b.as_ref(),
-                options,
-            );
-            print::unit::diff_body(&mut state, unit_a, unit_b).ok()
+            print::unit::diff_body(state, unit_a, unit_b).ok()
         }
         (Id::Unit { unit_index }, Id::None) => {
             let unit = file_a.units().get(unit_index)?;
-            let hash = FileHash::new(file_a);
-            let code = Code::new(file_a);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
-            print::unit::print_body(unit, &mut state).ok()
+            print::unit::print_body(unit, &mut state.a()).ok()
         }
         (Id::None, Id::Unit { unit_index }) => {
             let unit = file_b.units().get(unit_index)?;
-            let hash = FileHash::new(file_b);
-            let code = Code::new(file_b);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
-            print::unit::print_body(unit, &mut state).ok()
+            print::unit::print_body(unit, &mut state.b()).ok()
         }
         (
             Id::Type {
@@ -127,19 +87,7 @@ pub fn diff_id(
             let unit_b = file_b.units().get(unit_index_b)?;
             let type_a = unit_a.types().get(type_index_a)?;
             let type_b = unit_b.types().get(type_index_b)?;
-            let hash_a = FileHash::new(file_a);
-            let hash_b = FileHash::new(file_b);
-            let code_a = Code::new(file_a);
-            let code_b = Code::new(file_b);
-            let mut state = DiffState::new(
-                printer,
-                &hash_a,
-                &hash_b,
-                code_a.as_ref(),
-                code_b.as_ref(),
-                options,
-            );
-            print::types::diff_body(&mut state, unit_a, type_a, unit_b, type_b).ok()
+            print::types::diff_body(state, unit_a, type_a, unit_b, type_b).ok()
         }
         (
             Id::Type {
@@ -150,11 +98,8 @@ pub fn diff_id(
         ) => {
             let unit = file_a.units().get(unit_index)?;
             let ty = unit.types().get(type_index)?;
-            let hash = FileHash::new(file_a);
-            let code = Code::new(file_a);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
             print::types::kind(ty)
-                .and_then(|kind| kind.print_body(&mut state, unit))
+                .and_then(|kind| kind.print_body(&mut state.a(), unit))
                 .ok()
         }
         (
@@ -166,11 +111,8 @@ pub fn diff_id(
         ) => {
             let unit = file_b.units().get(unit_index)?;
             let ty = unit.types().get(type_index)?;
-            let hash = FileHash::new(file_b);
-            let code = Code::new(file_b);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
             print::types::kind(ty)
-                .and_then(|kind| kind.print_body(&mut state, unit))
+                .and_then(|kind| kind.print_body(&mut state.b(), unit))
                 .ok()
         }
         (
@@ -187,19 +129,7 @@ pub fn diff_id(
             let unit_b = file_b.units().get(unit_index_b)?;
             let function_a = unit_a.functions().get(function_index_a)?;
             let function_b = unit_b.functions().get(function_index_b)?;
-            let hash_a = FileHash::new(file_a);
-            let hash_b = FileHash::new(file_b);
-            let code_a = Code::new(file_a);
-            let code_b = Code::new(file_b);
-            let mut state = DiffState::new(
-                printer,
-                &hash_a,
-                &hash_b,
-                code_a.as_ref(),
-                code_b.as_ref(),
-                options,
-            );
-            PrintHeader::diff_body(&mut state, unit_a, function_a, unit_b, function_b).ok()
+            PrintHeader::diff_body(state, unit_a, function_a, unit_b, function_b).ok()
         }
         (
             Id::Function {
@@ -210,10 +140,7 @@ pub fn diff_id(
         ) => {
             let unit = file_a.units().get(unit_index)?;
             let function = unit.functions().get(function_index)?;
-            let hash = FileHash::new(file_a);
-            let code = Code::new(file_a);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
-            function.print_body(&mut state, unit).ok()
+            function.print_body(&mut state.a(), unit).ok()
         }
         (
             Id::None,
@@ -224,10 +151,7 @@ pub fn diff_id(
         ) => {
             let unit = file_b.units().get(unit_index)?;
             let function = unit.functions().get(function_index)?;
-            let hash = FileHash::new(file_b);
-            let code = Code::new(file_b);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
-            function.print_body(&mut state, unit).ok()
+            function.print_body(&mut state.b(), unit).ok()
         }
         (
             Id::Variable {
@@ -243,19 +167,7 @@ pub fn diff_id(
             let unit_b = file_b.units().get(unit_index_b)?;
             let variable_a = unit_a.variables().get(variable_index_a)?;
             let variable_b = unit_b.variables().get(variable_index_b)?;
-            let hash_a = FileHash::new(file_a);
-            let hash_b = FileHash::new(file_b);
-            let code_a = Code::new(file_a);
-            let code_b = Code::new(file_b);
-            let mut state = DiffState::new(
-                printer,
-                &hash_a,
-                &hash_b,
-                code_a.as_ref(),
-                code_b.as_ref(),
-                options,
-            );
-            PrintHeader::diff_body(&mut state, unit_a, variable_a, unit_b, variable_b).ok()
+            PrintHeader::diff_body(state, unit_a, variable_a, unit_b, variable_b).ok()
         }
         (
             Id::Variable {
@@ -266,10 +178,7 @@ pub fn diff_id(
         ) => {
             let unit = file_a.units().get(unit_index)?;
             let variable = unit.variables().get(variable_index)?;
-            let hash = FileHash::new(file_a);
-            let code = Code::new(file_a);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
-            variable.print_body(&mut state, unit).ok()
+            variable.print_body(&mut state.a(), unit).ok()
         }
         (
             Id::None,
@@ -280,10 +189,7 @@ pub fn diff_id(
         ) => {
             let unit = file_b.units().get(unit_index)?;
             let variable = unit.variables().get(variable_index)?;
-            let hash = FileHash::new(file_b);
-            let code = Code::new(file_b);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
-            variable.print_body(&mut state, unit).ok()
+            variable.print_body(&mut state.b(), unit).ok()
         }
         _ => None,
     }

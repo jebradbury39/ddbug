@@ -9,9 +9,10 @@ fn print(fixture: &Fixture, name: &str, expect: &str) {
     let file = ddbug::File::parse(fixture.file1.into(), &arena).unwrap();
     let mut options = options();
     options.unit(fixture.unit).name(name);
+    let context = ddbug::PrintContext::new(&file, options);
     let mut output = Vec::new();
     let mut printer = ddbug::TextPrinter::new(&mut output);
-    ddbug::print(&file, &mut printer, &options).unwrap();
+    context.print(&mut printer).unwrap();
     let output = String::from_utf8(output).unwrap();
     if !equal(&output, expect) {
         println!("\nOutput:");
@@ -28,9 +29,10 @@ fn diff(fixture: &Fixture, name: &str, expect: &str) {
     let file2 = ddbug::File::parse(fixture.file2.into(), &arena).unwrap();
     let mut options = options();
     options.unit(fixture.unit).name(name);
+    let context = ddbug::DiffContext::new(&file1, &file2, options);
     let mut diff = Vec::new();
     let mut printer = ddbug::TextPrinter::new(&mut diff);
-    ddbug::diff(&mut printer, &file1, &file2, &options).unwrap();
+    context.print(&mut printer).unwrap();
     let diff = String::from_utf8(diff).unwrap();
     if !equal(&diff, expect) {
         println!("\nDiff:");

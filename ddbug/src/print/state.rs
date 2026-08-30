@@ -305,7 +305,7 @@ pub(crate) struct DiffState<'a> {
 
 impl<'a> DiffState<'a> {
     #[inline]
-    fn a(&'_ mut self) -> PrintState<'_> {
+    pub(crate) fn a(&'_ mut self) -> PrintState<'_> {
         PrintState {
             printer: self.printer,
             inline_depth: self.inline_depth,
@@ -316,7 +316,7 @@ impl<'a> DiffState<'a> {
     }
 
     #[inline]
-    fn b(&'_ mut self) -> PrintState<'_> {
+    pub(crate) fn b(&'_ mut self) -> PrintState<'_> {
         PrintState {
             printer: self.printer,
             inline_depth: self.inline_depth,

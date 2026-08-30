@@ -6,7 +6,7 @@ use crate::merge::{MergeIterator, MergeResult};
 use crate::print::SortList;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum Id {
+pub(crate) enum Id {
     None,
     Unit {
         unit_index: usize,
@@ -25,7 +25,21 @@ pub enum Id {
     },
 }
 
-pub struct PrintIndex {
+impl Id {
+    pub fn parent(&self, file: &File) -> Option<usize> {
+        match self {
+            Id::Type { unit_index, .. }
+            | Id::Function { unit_index, .. }
+            | Id::Variable { unit_index, .. } => {
+                let unit = file.units().get(*unit_index)?;
+                Some(unit.id())
+            }
+            _ => None,
+        }
+    }
+}
+
+pub(crate) struct PrintIndex {
     ids: Vec<Id>,
 }
 
@@ -40,15 +54,7 @@ impl PrintIndex {
     }
 
     pub fn parent(&self, id: usize, file: &File) -> Option<usize> {
-        match self.get(id)? {
-            Id::Type { unit_index, .. }
-            | Id::Function { unit_index, .. }
-            | Id::Variable { unit_index, .. } => {
-                let unit = file.units().get(unit_index)?;
-                Some(unit.id())
-            }
-            _ => None,
-        }
+        self.get(id)?.parent(file)
     }
 }
 
@@ -86,12 +92,12 @@ fn assign_ids_in_unit(unit_index: usize, unit: &Unit, _options: &Options, ids: &
     }
 }
 
-pub struct DiffIndex {
+pub(crate) struct DiffIndex {
     ids: Vec<(Id, Id)>,
 }
 
 impl DiffIndex {
-    pub fn new(file_a: &File, file_b: &File, options: &Options) -> DiffIndex {
+    pub fn new(file_a: &FileHash, file_b: &FileHash, options: &Options) -> DiffIndex {
         let ids = assign_merged_ids(file_a, file_b, options);
         DiffIndex { ids }
     }
@@ -99,16 +105,18 @@ impl DiffIndex {
     pub(crate) fn get(&self, id: usize) -> Option<(Id, Id)> {
         self.ids.get(id).copied()
     }
+
+    pub fn parent(&self, id: usize, file_a: &File, file_b: &File) -> Option<usize> {
+        let (id_a, id_b) = self.get(id)?;
+        id_a.parent(file_a).or_else(|| id_b.parent(file_b))
+    }
 }
 
-fn assign_merged_ids(file_a: &File, file_b: &File, options: &Options) -> Vec<(Id, Id)> {
-    let hash_a = &FileHash::new(file_a);
-    let hash_b = &FileHash::new(file_b);
-
+fn assign_merged_ids(hash_a: &FileHash, hash_b: &FileHash, options: &Options) -> Vec<(Id, Id)> {
     let mut ids = Vec::new();
-    let mut units_a = filter::enumerate_and_filter_units(file_a, options);
+    let mut units_a = filter::enumerate_and_filter_units(hash_a.file, options);
     units_a.sort_by(|x, y| Unit::cmp_id(hash_a, x.1, hash_a, y.1, options));
-    let mut units_b = filter::enumerate_and_filter_units(file_b, options);
+    let mut units_b = filter::enumerate_and_filter_units(hash_b.file, options);
     units_b.sort_by(|x, y| Unit::cmp_id(hash_b, x.1, hash_b, y.1, options));
     let units = MergeIterator::new(units_a.into_iter(), units_b.into_iter(), |a, b| {
         Unit::cmp_id(hash_a, a.1, hash_b, b.1, options)

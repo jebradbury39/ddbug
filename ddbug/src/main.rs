@@ -460,17 +460,13 @@ fn main() {
                 Err(e) => error!("{}: {}", path_b, e),
                 Ok(file_b) => {
                     if let Err(e) = {
-                        let index = ddbug::DiffIndex::new(&file_a, &file_b, &options);
+                        let file_a = Box::leak(Box::new(file_a));
+                        let file_b = Box::leak(Box::new(file_b));
+                        let context = ddbug::DiffContext::new(file_a, file_b, options);
                         if http {
-                            let state = ServeDiffState {
-                                file_a,
-                                file_b,
-                                options,
-                                index,
-                            };
-                            serve(state, serve_diff_file)
+                            serve(context, serve_diff_file)
                         } else {
-                            diff_file(&file_a, &file_b, &options)
+                            format(context.options(), |printer| context.print(printer))
                         }
                     } {
                         error!("{}", e);
@@ -480,16 +476,12 @@ fn main() {
         }
     } else if let Some(path) = matches.get_one::<String>(OPT_BLOAT) {
         if let Err(e) = ddbug::File::parse(path.to_string(), arena).and_then(|file| {
-            let index = ddbug::BloatIndex::new(&file, &options);
+            let file = Box::leak(Box::new(file));
+            let context = ddbug::BloatContext::new(file, options);
             if http {
-                let state = ServeBloatState {
-                    file,
-                    options,
-                    index,
-                };
-                serve(state, serve_bloat_file)
+                serve(context, serve_bloat_file)
             } else {
-                bloat_file(&file, &options, &index)
+                format(context.options(), |printer| context.print(printer))
             }
         }) {
             error!("{}: {}", path, e);
@@ -498,48 +490,17 @@ fn main() {
         let path = matches.get_one::<String>(OPT_FILE).unwrap();
 
         if let Err(e) = ddbug::File::parse(path.to_string(), arena).and_then(|file| {
-            let index = ddbug::PrintIndex::new(&file, &options);
+            let file = Box::leak(Box::new(file));
+            let context = ddbug::PrintContext::new(file, options);
             if http {
-                let state = ServePrintState {
-                    file,
-                    options,
-                    index,
-                };
-                serve(state, serve_print_file)
+                serve(context, serve_print_file)
             } else {
-                print_file(&file, &options)
+                format(context.options(), |printer| context.print(printer))
             }
         }) {
             error!("{}: {}", path, e);
         }
     }
-}
-
-fn diff_file(
-    file_a: &ddbug::File,
-    file_b: &ddbug::File,
-    options: &ddbug::Options,
-) -> ddbug::Result<()> {
-    format(options, |printer| {
-        if let Err(e) = ddbug::diff(printer, file_a, file_b, options) {
-            error!("{}", e);
-        }
-        Ok(())
-    })
-}
-
-fn bloat_file(
-    file: &ddbug::File,
-    options: &ddbug::Options,
-    index: &ddbug::BloatIndex,
-) -> ddbug::Result<()> {
-    format(options, |printer| {
-        ddbug::bloat(file, printer, options, index)
-    })
-}
-
-fn print_file(file: &ddbug::File, options: &ddbug::Options) -> ddbug::Result<()> {
-    format(options, |printer| ddbug::print(file, printer, options))
 }
 
 fn format<F>(options: &ddbug::Options, f: F) -> ddbug::Result<()>
@@ -559,19 +520,12 @@ where
     }
 }
 
-struct ServeDiffState {
-    file_a: parser::File<'static>,
-    file_b: parser::File<'static>,
-    options: ddbug::Options,
-    index: ddbug::DiffIndex,
-}
-
-fn serve_diff_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &ServeDiffState) {
+fn serve_diff_file(writer: &mut Vec<u8>, mut path: str::Split<char>, context: &ddbug::DiffContext) {
     match path.next() {
         Some("") => {
             let mut printer = ddbug::HtmlPrinter::new(writer, true);
             printer.begin().unwrap();
-            ddbug::diff(&mut printer, &state.file_a, &state.file_b, &state.options).unwrap();
+            context.print(&mut printer).unwrap();
             printer.end().unwrap();
         }
         Some("id") => {
@@ -580,14 +534,7 @@ fn serve_diff_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &Ser
                 match path.next() {
                     None => {
                         let mut printer = ddbug::HtmlPrinter::new(writer, true);
-                        ddbug::diff_id(
-                            id,
-                            &state.file_a,
-                            &state.file_b,
-                            &mut printer,
-                            &state.options,
-                            &state.index,
-                        );
+                        context.print_id(id, None, &mut printer);
                     }
                     _ => {}
                 }
@@ -597,18 +544,16 @@ fn serve_diff_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &Ser
     }
 }
 
-struct ServePrintState {
-    file: parser::File<'static>,
-    options: ddbug::Options,
-    index: ddbug::PrintIndex,
-}
-
-fn serve_print_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &ServePrintState) {
+fn serve_print_file(
+    writer: &mut Vec<u8>,
+    mut path: str::Split<char>,
+    context: &ddbug::PrintContext,
+) {
     match path.next() {
         Some("") => {
             let mut printer = ddbug::HtmlPrinter::new(writer, true);
             printer.begin().unwrap();
-            ddbug::print(&state.file, &mut printer, &state.options).unwrap();
+            context.print(&mut printer).unwrap();
             printer.end().unwrap();
         }
         Some("id") => {
@@ -617,30 +562,16 @@ fn serve_print_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &Se
                 match path.next() {
                     None => {
                         let mut printer = ddbug::HtmlPrinter::new(writer, true);
-                        ddbug::print_id(
-                            id,
-                            None,
-                            &state.file,
-                            &mut printer,
-                            &state.options,
-                            &state.index,
-                        );
+                        context.print_id(id, None, &mut printer);
                     }
                     Some("parent") => {
-                        if let Some(parent_id) = state.index.parent(id, &state.file) {
+                        if let Some(parent_id) = context.parent(id) {
                             write!(writer, "{}", parent_id).unwrap();
                         }
                     }
                     Some(detail) => {
                         let mut printer = ddbug::HtmlPrinter::new(writer, true);
-                        ddbug::print_id(
-                            id,
-                            Some(detail),
-                            &state.file,
-                            &mut printer,
-                            &state.options,
-                            &state.index,
-                        );
+                        context.print_id(id, Some(detail), &mut printer);
                     }
                 }
             }
@@ -649,25 +580,23 @@ fn serve_print_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &Se
     }
 }
 
-struct ServeBloatState {
-    file: parser::File<'static>,
-    options: ddbug::Options,
-    index: ddbug::BloatIndex,
-}
-
-fn serve_bloat_file(writer: &mut Vec<u8>, mut path: str::Split<char>, state: &ServeBloatState) {
+fn serve_bloat_file(
+    writer: &mut Vec<u8>,
+    mut path: str::Split<char>,
+    context: &ddbug::BloatContext,
+) {
     match path.next() {
         Some("") => {
             let mut printer = ddbug::HtmlPrinter::new(writer, true);
             printer.begin().unwrap();
-            ddbug::bloat(&state.file, &mut printer, &state.options, &state.index).unwrap();
+            context.print(&mut printer).unwrap();
             printer.end().unwrap();
         }
         Some("id") => {
             let id = path.next().and_then(|id| str::parse::<usize>(id).ok());
             if let Some(id) = id {
                 let mut printer = ddbug::HtmlPrinter::new(writer, true);
-                ddbug::bloat_id(id, &state.file, &mut printer, &state.options, &state.index);
+                context.print_id(id, &mut printer);
             }
         }
         _ => {}

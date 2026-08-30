@@ -1,25 +1,21 @@
-use parser::{File, FileHash, Unit};
+use parser::{FileHash, Unit};
 
-use crate::code::Code;
 use crate::filter;
 use crate::merge::{MergeIterator, MergeResult};
-use crate::print::{DiffState, PrintState, Printer, SortList};
+use crate::print::{DiffState, PrintState, SortList};
 use crate::{Options, Result};
 
-pub fn print(file: &File, printer: &mut dyn Printer, options: &Options) -> Result<()> {
-    let hash = FileHash::new(file);
-    let code = Code::new(file);
-    let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
-
-    if options.category_file {
+pub(crate) fn print(state: &mut PrintState) -> Result<()> {
+    if state.options().category_file {
         state.collapsed(
             |state| {
-                state.line(|w, _hash| {
-                    write!(w, "file {}", file.path())?;
+                state.line(|w, hash| {
+                    write!(w, "file {}", hash.file.path())?;
                     Ok(())
                 })
             },
             |state| {
+                let file = state.hash().file;
                 let ranges = file.ranges(state.hash());
                 let size = ranges.size();
                 let fn_size = file.function_size();
@@ -29,7 +25,7 @@ pub fn print(file: &File, printer: &mut dyn Printer, options: &Options) -> Resul
                     debug!("function or variable sizes are too large");
                     0
                 });
-                if options.print_file_address {
+                if state.options().print_file_address {
                     state.field_collapsed("addresses", |state| state.list(&(), ranges.list()))?;
                 }
                 state.field_u64("size", size)?;
@@ -43,40 +39,28 @@ pub fn print(file: &File, printer: &mut dyn Printer, options: &Options) -> Resul
         state.line_break()?;
     }
 
-    state.sort_list(&(), &mut filter::filter_units(file, options))
+    state.sort_list(
+        &(),
+        &mut filter::filter_units(state.hash().file, state.options()),
+    )
 }
 
-pub fn diff(
-    printer: &mut dyn Printer,
-    file_a: &File,
-    file_b: &File,
-    options: &Options,
-) -> Result<()> {
-    let hash_a = FileHash::new(file_a);
-    let hash_b = FileHash::new(file_b);
-    let code_a = Code::new(file_a);
-    let code_b = Code::new(file_b);
-
-    let mut state = DiffState::new(
-        printer,
-        &hash_a,
-        &hash_b,
-        code_a.as_ref(),
-        code_b.as_ref(),
-        options,
-    );
-
-    if options.category_file {
+pub(crate) fn diff(state: &mut DiffState) -> Result<()> {
+    if state.options().category_file {
         state.collapsed(
             |state| {
-                state.line(file_a, file_b, |w, _hash, x| {
+                state.line(state.hash_a().file, state.hash_b().file, |w, _hash, x| {
                     write!(w, "file {}", x.path())?;
                     Ok(())
                 })
             },
             |state| {
-                let ranges_a = file_a.ranges(state.hash_a());
-                let ranges_b = file_b.ranges(state.hash_b());
+                let hash_a = state.hash_a();
+                let hash_b = state.hash_b();
+                let file_a = hash_a.file;
+                let file_b = hash_b.file;
+                let ranges_a = file_a.ranges(hash_a);
+                let ranges_b = file_b.ranges(hash_b);
                 let size_a = ranges_a.size();
                 let size_b = ranges_b.size();
                 let fn_size_a = file_a.function_size();
@@ -85,7 +69,7 @@ pub fn diff(
                 let var_size_b = file_b.variable_size(state.hash_b());
                 let other_size_a = size_a - fn_size_a - var_size_a;
                 let other_size_b = size_b - fn_size_b - var_size_b;
-                if options.print_file_address {
+                if state.options().print_file_address {
                     state.field_collapsed("addresses", |state| {
                         state.ord_list(&(), ranges_a.list(), &(), ranges_b.list())
                     })?;
@@ -107,20 +91,18 @@ pub fn diff(
     state.sort_list(
         &(),
         &(),
-        &mut merged_units(&hash_a, file_a, &hash_b, file_b, options),
+        &mut merged_units(state.hash_a(), state.hash_b(), state.options()),
     )
 }
 
 fn merged_units<'a, 'input>(
-    hash_a: &FileHash,
-    file_a: &'a File<'input>,
-    hash_b: &FileHash,
-    file_b: &'a File<'input>,
+    hash_a: &FileHash<'input>,
+    hash_b: &FileHash<'input>,
     options: &Options,
 ) -> Vec<MergeResult<&'a Unit<'input>, &'a Unit<'input>>> {
-    let mut units_a = filter::filter_units(file_a, options);
+    let mut units_a = filter::filter_units(hash_a.file, options);
     units_a.sort_by(|x, y| Unit::cmp_id(hash_a, x, hash_a, y, options));
-    let mut units_b = filter::filter_units(file_b, options);
+    let mut units_b = filter::filter_units(hash_b.file, options);
     units_b.sort_by(|x, y| Unit::cmp_id(hash_b, x, hash_b, y, options));
     MergeIterator::new(units_a.into_iter(), units_b.into_iter(), |a, b| {
         Unit::cmp_id(hash_a, a, hash_b, b, options)

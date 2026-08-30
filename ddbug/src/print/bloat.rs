@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 
-use parser::{File, FileHash};
+use parser::File;
 
+use crate::Result;
 use crate::code::Code;
-use crate::index::{Id, PrintIndex};
-use crate::print::{self, PrintState, Printer};
-use crate::{Options, Result};
+use crate::index::Id;
+use crate::print::{self, PrintState};
 
-pub struct BloatIndex {
-    index: PrintIndex,
+pub(crate) struct BloatIndex {
     function_totals: Vec<(FunctionId, FunctionTotal)>,
     callers: HashMap<u64, Vec<Caller>>,
 }
@@ -34,8 +33,7 @@ struct Caller {
 }
 
 impl BloatIndex {
-    pub fn new(file: &File, options: &Options) -> BloatIndex {
-        let index = PrintIndex::new(file, options);
+    pub fn new(file: &File) -> BloatIndex {
         let code = Code::new(file);
 
         // Build a list of copies of functions.
@@ -80,107 +78,87 @@ impl BloatIndex {
         });
 
         BloatIndex {
-            index,
             function_totals,
             callers,
         }
     }
-}
 
-pub fn bloat(
-    file: &File,
-    printer: &mut dyn Printer,
-    options: &Options,
-    index: &BloatIndex,
-) -> Result<()> {
-    let hash = FileHash::new(file);
-
-    let state = &mut PrintState::new(printer, &hash, None, options);
-    for (id, function_total) in &index.function_totals {
-        state.collapsed(
-            |state| {
-                state.line(|w, _hash| {
-                    write!(w, "{} ", function_total.size)?;
-                    w.write_all(&id.name)?;
-                    if !id.source.is_empty() {
-                        write!(w, " ")?;
-                        w.write_all(&id.source)?;
+    pub fn print(&self, state: &mut PrintState) -> Result<()> {
+        for (id, function_total) in &self.function_totals {
+            state.collapsed(
+                |state| {
+                    state.line(|w, _hash| {
+                        write!(w, "{} ", function_total.size)?;
+                        w.write_all(&id.name)?;
+                        if !id.source.is_empty() {
+                            write!(w, " ")?;
+                            w.write_all(&id.source)?;
+                        }
+                        Ok(())
+                    })
+                },
+                |state| {
+                    for (unit_index, function_index) in &function_total.functions {
+                        let file = state.hash().file;
+                        let unit = &file.units()[*unit_index];
+                        let function = &unit.functions()[*function_index];
+                        let address = function.address().unwrap();
+                        let size = function.size().unwrap();
+                        state.id(
+                            function.id(),
+                            |state| {
+                                state.line(|w, _hash| {
+                                    write!(w, "{} ", size)?;
+                                    print::unit::print_ref(unit, w)?;
+                                    Ok(())
+                                })
+                            },
+                            |state| self.print_callers(state, address),
+                        )?;
                     }
                     Ok(())
-                })
-            },
-            |state| {
-                for (unit_index, function_index) in &function_total.functions {
-                    let unit = &file.units()[*unit_index];
-                    let function = &unit.functions()[*function_index];
-                    let address = function.address().unwrap();
-                    let size = function.size().unwrap();
-                    state.id(
-                        function.id(),
-                        |state| {
-                            state.line(|w, _hash| {
-                                write!(w, "{} ", size)?;
-                                print::unit::print_ref(unit, w)?;
-                                Ok(())
-                            })
-                        },
-                        |state| bloat_callers(state, file, index, address),
-                    )?;
-                }
-                Ok(())
-            },
-        )?;
+                },
+            )?;
+        }
+
+        Ok(())
     }
 
-    Ok(())
-}
-
-fn bloat_callers(
-    state: &mut PrintState,
-    file: &File,
-    index: &BloatIndex,
-    address: u64,
-) -> Result<()> {
-    if let Some(calls) = index.callers.get(&address) {
-        for caller in calls {
-            state.line(|w, _hash| {
-                // TODO: print inlined functions too
-                let unit = &file.units()[caller.unit_index];
-                let function = &unit.functions()[caller.function_index];
-                print::function::print_ref(function, w)?;
-                // TODO: print source of from_address instead
-                let mut source = Vec::new();
-                print::source::print(function.source(), &mut source, unit)?;
-                if !source.is_empty() {
-                    write!(w, " ")?;
-                    w.write_all(&source)?;
-                }
-                Ok(())
-            })?;
+    fn print_callers(&self, state: &mut PrintState, address: u64) -> Result<()> {
+        if let Some(calls) = self.callers.get(&address) {
+            for caller in calls {
+                state.line(|w, hash| {
+                    // TODO: print inlined functions too
+                    let file = hash.file;
+                    let unit = &file.units()[caller.unit_index];
+                    let function = &unit.functions()[caller.function_index];
+                    print::function::print_ref(function, w)?;
+                    // TODO: print source of from_address instead
+                    let mut source = Vec::new();
+                    print::source::print(function.source(), &mut source, unit)?;
+                    if !source.is_empty() {
+                        write!(w, " ")?;
+                        w.write_all(&source)?;
+                    }
+                    Ok(())
+                })?;
+            }
         }
+        Ok(())
     }
-    Ok(())
-}
 
-pub fn bloat_id(
-    id: usize,
-    file: &File,
-    printer: &mut dyn Printer,
-    options: &Options,
-    index: &BloatIndex,
-) -> Option<()> {
-    match index.index.get(id)? {
-        Id::Function {
-            unit_index,
-            function_index,
-        } => {
-            let unit = file.units().get(unit_index)?;
-            let function = unit.functions().get(function_index)?;
-            let hash = FileHash::new(file);
-            let code = Code::new(file);
-            let mut state = PrintState::new(printer, &hash, code.as_ref(), options);
-            bloat_callers(&mut state, file, index, function.address().unwrap()).ok()
+    pub fn print_id(&self, id: Id, state: &mut PrintState) -> Option<()> {
+        match id {
+            Id::Function {
+                unit_index,
+                function_index,
+            } => {
+                let file = state.hash().file;
+                let unit = file.units().get(unit_index)?;
+                let function = unit.functions().get(function_index)?;
+                self.print_callers(state, function.address()?).ok()
+            }
+            _ => None,
         }
-        _ => None,
     }
 }

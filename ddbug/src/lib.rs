@@ -21,16 +21,14 @@ pub use parser::{Arena, Error, File, Result};
 
 mod code;
 mod filter;
+mod index;
 mod merge;
 mod shortest_path;
 
-mod index;
-pub use index::{DiffIndex, Id, PrintIndex};
+mod context;
+pub use context::{BloatContext, DiffContext, PrintContext};
 
 mod print;
-pub use self::print::bloat::{BloatIndex, bloat, bloat_id};
-pub use self::print::file::{diff, print};
-pub use self::print::id::{diff_id, print_id};
 pub use self::print::{DiffPrefix, HtmlPrinter, Printer, TextPrinter};
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
