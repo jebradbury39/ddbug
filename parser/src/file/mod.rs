@@ -69,9 +69,12 @@ where
 }
 
 /// An arena for storage of long lived data that is referenced by a [`File`].
+///
+/// The data is only freed when the `Arena` is freed, not when the `File` is freed.
 #[derive(Default)]
-struct Arena {
+pub struct Arena {
     // TODO: can these be a single `Vec<Box<dyn ??>>`?
+    maps: Mutex<Vec<memmap2::Mmap>>,
     buffers: Mutex<Vec<Vec<u8>>>,
     strings: Mutex<Vec<String>>,
     #[allow(clippy::vec_box)]
@@ -80,8 +83,16 @@ struct Arena {
 
 impl Arena {
     /// Create a new empty arena.
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
+    }
+
+    fn add_map<'input>(&'input self, map: memmap2::Mmap) -> &'input [u8] {
+        let mut maps = self.maps.lock().unwrap();
+        let i = maps.len();
+        maps.push(map);
+        let map = &maps[i];
+        unsafe { mem::transmute::<&[u8], &'input [u8]>(map) }
     }
 
     fn add_buffer<'input>(&'input self, bytes: Vec<u8>) -> &'input [u8] {
@@ -120,54 +131,6 @@ impl Arena {
 }
 
 pub use object::Architecture;
-
-/// The context needed for a parsed file.
-///
-/// The parsed file references the context, so it is included here as well.
-pub struct FileContext {
-    // Self-referential, not actually `static.
-    file: File<'static>,
-    _map: Option<memmap2::Mmap>,
-    _arena: Box<Arena>,
-}
-
-impl FileContext {
-    fn new_map<F>(map: memmap2::Mmap, f: F) -> Result<FileContext>
-    where
-        F: for<'a> FnOnce(&'a [u8], &'a Arena) -> Result<File<'a>>,
-    {
-        let arena = Box::new(Arena::new());
-        let file = f(&map, &arena)?;
-        Ok(FileContext {
-            // `file` only borrows from `map` and `arena`, which we are preserving
-            // without moving.
-            file: unsafe { mem::transmute::<File<'_>, File<'static>>(file) },
-            _map: Some(map),
-            _arena: arena,
-        })
-    }
-
-    fn new_vec<F>(data: Vec<u8>, f: F) -> Result<FileContext>
-    where
-        F: for<'a> FnOnce(&'a [u8], &'a Arena) -> Result<File<'a>>,
-    {
-        let arena = Box::new(Arena::new());
-        let data = arena.add_buffer(data);
-        let file = f(data, &arena)?;
-        Ok(FileContext {
-            // `file` only borrows from `arena`, which we are preserving
-            // without moving.
-            file: unsafe { mem::transmute::<File<'_>, File<'static>>(file) },
-            _map: None,
-            _arena: arena,
-        })
-    }
-
-    /// Return the parsed debuginfo for the file.
-    pub fn file<'a>(&'a self) -> &'a File<'a> {
-        unsafe { mem::transmute::<&'a File<'static>, &'a File<'a>>(&self.file) }
-    }
-}
 
 /// The parsed debuginfo for a single file.
 pub struct File<'input> {
@@ -209,7 +172,10 @@ impl<'input> File<'input> {
     }
 
     /// Read and parse the file at the given path.
-    pub fn parse(path: String) -> Result<FileContext> {
+    ///
+    /// This stores long-lived data in the given arena which is only freed when the arena
+    /// is freed.
+    pub fn parse(path: String, arena: &'input Arena) -> Result<File<'input>> {
         let handle = match fs::File::open(&path) {
             Ok(handle) => handle,
             Err(e) => {
@@ -223,13 +189,12 @@ impl<'input> File<'input> {
                 return Err(format!("memmap failed: {}", e).into());
             }
         };
+        let data = arena.add_map(map);
 
         // TODO: split DWARF
         // TODO: PDB
-        FileContext::new_map(map, |data, arena| {
-            let object = object::File::parse(data)?;
-            File::parse_object(&object, &object, path, arena)
-        })
+        let object = object::File::parse(data)?;
+        File::parse_object(&object, &object, path, arena)
     }
 
     /// Parse the file with the given data.
@@ -237,11 +202,13 @@ impl<'input> File<'input> {
     /// `path` is returned by `File::path`, but is otherwise unused.
     ///
     /// `data` must be a recognized object file format, such as ELF or Mach-O.
-    pub fn parse_vec(path: String, data: Vec<u8>) -> Result<FileContext> {
-        FileContext::new_vec(data, |data, arena| {
-            let object = object::File::parse(data)?;
-            File::parse_object(&object, &object, path, arena)
-        })
+    ///
+    /// This stores long-lived data in the given arena which is only freed when the arena
+    /// is freed.
+    pub fn parse_vec(path: String, data: Vec<u8>, arena: &'input Arena) -> Result<File<'input>> {
+        let data = arena.add_buffer(data);
+        let object = object::File::parse(data)?;
+        File::parse_object(&object, &object, path, arena)
     }
 
     fn parse_object(

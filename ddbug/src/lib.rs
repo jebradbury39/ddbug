@@ -17,7 +17,7 @@ extern crate log;
 
 use parser::Namespace;
 
-pub use parser::{Error, File, Result};
+pub use parser::{Arena, Error, File, Result};
 
 mod code;
 mod filter;

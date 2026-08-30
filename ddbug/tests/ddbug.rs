@@ -5,12 +5,13 @@ struct Fixture {
 }
 
 fn print(fixture: &Fixture, name: &str, expect: &str) {
-    let file = ddbug::File::parse(fixture.file1.into()).unwrap();
+    let arena = ddbug::Arena::new();
+    let file = ddbug::File::parse(fixture.file1.into(), &arena).unwrap();
     let mut options = options();
     options.unit(fixture.unit).name(name);
     let mut output = Vec::new();
     let mut printer = ddbug::TextPrinter::new(&mut output);
-    ddbug::print(file.file(), &mut printer, &options).unwrap();
+    ddbug::print(&file, &mut printer, &options).unwrap();
     let output = String::from_utf8(output).unwrap();
     if !equal(&output, expect) {
         println!("\nOutput:");
@@ -22,13 +23,14 @@ fn print(fixture: &Fixture, name: &str, expect: &str) {
 }
 
 fn diff(fixture: &Fixture, name: &str, expect: &str) {
-    let file1 = ddbug::File::parse(fixture.file1.into()).unwrap();
-    let file2 = ddbug::File::parse(fixture.file2.into()).unwrap();
+    let arena = ddbug::Arena::new();
+    let file1 = ddbug::File::parse(fixture.file1.into(), &arena).unwrap();
+    let file2 = ddbug::File::parse(fixture.file2.into(), &arena).unwrap();
     let mut options = options();
     options.unit(fixture.unit).name(name);
     let mut diff = Vec::new();
     let mut printer = ddbug::TextPrinter::new(&mut diff);
-    ddbug::diff(&mut printer, file1.file(), file2.file(), &options).unwrap();
+    ddbug::diff(&mut printer, &file1, &file2, &options).unwrap();
     let diff = String::from_utf8(diff).unwrap();
     if !equal(&diff, expect) {
         println!("\nDiff:");
