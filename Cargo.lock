@@ -183,6 +183,7 @@ dependencies = [
  "hyper-util",
  "log",
  "marksman_escape",
+ "self_cell",
  "tokio",
 ]
 
@@ -626,6 +627,12 @@ checksum = "a252f5e20f038fe7b4ea53e073e65398d652c864cc162fc77c56c2f13717b888"
 dependencies = [
  "twox-hash",
 ]
+
+[[package]]
+name = "self_cell"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ab42ca02749e120097e328d91d415325bdf43b1c72c4c8badf37375fe40a813"
 
 [[package]]
 name = "serde_core"

@@ -23,6 +23,8 @@ use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 
+use ddbug::{BloatContext, DiffContext, File, PrintContext};
+
 // Mode
 const OPT_FILE: &str = "file";
 const OPT_DIFF: &str = "diff";
@@ -447,40 +449,33 @@ fn main() {
         options.prefix_map.sort_by_key(|p| cmp::Reverse(p.0.len()));
     }
 
-    // Currently the HTTP handlers need a 'static lifetime.
-    let arena = Box::leak(Box::new(ddbug::Arena::new()));
-
     if let Some(mut paths) = matches.get_many::<String>(OPT_DIFF) {
         let path_a = paths.next().unwrap();
         let path_b = paths.next().unwrap();
 
-        match ddbug::File::parse(path_a.to_string(), arena) {
-            Err(e) => error!("{}: {}", path_a, e),
-            Ok(file_a) => match ddbug::File::parse(path_b.to_string(), arena) {
-                Err(e) => error!("{}: {}", path_b, e),
-                Ok(file_b) => {
-                    if let Err(e) = {
-                        let file_a = Box::leak(Box::new(file_a));
-                        let file_b = Box::leak(Box::new(file_b));
-                        let context = ddbug::DiffContext::new(file_a, file_b, options);
-                        if http {
-                            serve(context, serve_diff_file)
-                        } else {
-                            format(context.options(), |printer| context.print(printer))
-                        }
-                    } {
-                        error!("{}", e);
-                    }
-                }
-            },
+        if let Err(e) = parse_files(path_a, path_b).and_then(|files| {
+            let context = OwnedDiffContext::new(files, |files| {
+                let (file_a, file_b) = files.borrow_dependent();
+                DiffContext::new(file_a, file_b, options)
+            });
+            if http {
+                serve(context, serve_diff_file)
+            } else {
+                let context = context.borrow_dependent();
+                format(context.options(), |printer| context.print(printer))
+            }
+        }) {
+            error!("{}", e);
         }
     } else if let Some(path) = matches.get_one::<String>(OPT_BLOAT) {
-        if let Err(e) = ddbug::File::parse(path.to_string(), arena).and_then(|file| {
-            let file = Box::leak(Box::new(file));
-            let context = ddbug::BloatContext::new(file, options);
+        if let Err(e) = parse_file(path).and_then(|file| {
+            let context = OwnedBloatContext::new(file, |file| {
+                BloatContext::new(file.borrow_dependent(), options)
+            });
             if http {
                 serve(context, serve_bloat_file)
             } else {
+                let context = context.borrow_dependent();
                 format(context.options(), |printer| context.print(printer))
             }
         }) {
@@ -489,12 +484,14 @@ fn main() {
     } else {
         let path = matches.get_one::<String>(OPT_FILE).unwrap();
 
-        if let Err(e) = ddbug::File::parse(path.to_string(), arena).and_then(|file| {
-            let file = Box::leak(Box::new(file));
-            let context = ddbug::PrintContext::new(file, options);
+        if let Err(e) = parse_file(path).and_then(|file| {
+            let context = OwnedPrintContext::new(file, |file| {
+                PrintContext::new(file.borrow_dependent(), options)
+            });
             if http {
                 serve(context, serve_print_file)
             } else {
+                let context = context.borrow_dependent();
                 format(context.options(), |printer| context.print(printer))
             }
         }) {
@@ -520,7 +517,68 @@ where
     }
 }
 
-fn serve_diff_file(writer: &mut Vec<u8>, mut path: str::Split<char>, context: &ddbug::DiffContext) {
+// The HTTP handlers need a 'static lifetime, so store contexts with self_cell.
+
+self_cell::self_cell!(
+    struct ArenaFile {
+        owner: ddbug::Arena,
+        #[covariant]
+        dependent: File,
+    }
+);
+
+fn parse_file(path: &str) -> ddbug::Result<ArenaFile> {
+    ArenaFile::try_new(ddbug::Arena::new(), |arena| {
+        File::parse(path.to_string(), arena)
+    })
+}
+
+type Files<'input> = (File<'input>, File<'input>);
+
+self_cell::self_cell!(
+    struct ArenaFiles {
+        owner: ddbug::Arena,
+        #[covariant]
+        dependent: Files,
+    }
+);
+
+fn parse_files(path_a: &str, path_b: &str) -> ddbug::Result<ArenaFiles> {
+    ArenaFiles::try_new(ddbug::Arena::new(), |arena| -> ddbug::Result<Files> {
+        let file_a = File::parse(path_a.to_string(), arena)
+            .map_err(|e| ddbug::Error::from(format!("{}: {}", path_a, e)))?;
+        let file_b = File::parse(path_b.to_string(), arena)
+            .map_err(|e| ddbug::Error::from(format!("{}: {}", path_b, e)))?;
+        Ok((file_a, file_b))
+    })
+}
+
+self_cell::self_cell!(
+    struct OwnedPrintContext {
+        owner: ArenaFile,
+        #[covariant]
+        dependent: PrintContext,
+    }
+);
+
+self_cell::self_cell!(
+    struct OwnedDiffContext {
+        owner: ArenaFiles,
+        #[covariant]
+        dependent: DiffContext,
+    }
+);
+
+self_cell::self_cell!(
+    struct OwnedBloatContext {
+        owner: ArenaFile,
+        #[covariant]
+        dependent: BloatContext,
+    }
+);
+
+fn serve_diff_file(writer: &mut Vec<u8>, mut path: str::Split<char>, context: &OwnedDiffContext) {
+    let context = context.borrow_dependent();
     match path.next() {
         Some("") => {
             let mut printer = ddbug::HtmlPrinter::new(writer, true);
@@ -544,11 +602,8 @@ fn serve_diff_file(writer: &mut Vec<u8>, mut path: str::Split<char>, context: &d
     }
 }
 
-fn serve_print_file(
-    writer: &mut Vec<u8>,
-    mut path: str::Split<char>,
-    context: &ddbug::PrintContext,
-) {
+fn serve_print_file(writer: &mut Vec<u8>, mut path: str::Split<char>, context: &OwnedPrintContext) {
+    let context = context.borrow_dependent();
     match path.next() {
         Some("") => {
             let mut printer = ddbug::HtmlPrinter::new(writer, true);
@@ -580,11 +635,8 @@ fn serve_print_file(
     }
 }
 
-fn serve_bloat_file(
-    writer: &mut Vec<u8>,
-    mut path: str::Split<char>,
-    context: &ddbug::BloatContext,
-) {
+fn serve_bloat_file(writer: &mut Vec<u8>, mut path: str::Split<char>, context: &OwnedBloatContext) {
+    let context = context.borrow_dependent();
     match path.next() {
         Some("") => {
             let mut printer = ddbug::HtmlPrinter::new(writer, true);
