@@ -1,3 +1,5 @@
+use parser::{Function, Unit};
+
 use crate::index::Id;
 use crate::print::{self, DiffState, PrintHeader, PrintState};
 
@@ -23,14 +25,7 @@ pub(crate) fn print_id(id: Id, detail: Option<&str>, state: &mut PrintState) -> 
         } => {
             let unit = file.units().get(unit_index)?;
             let function = unit.functions().get(function_index)?;
-            match detail {
-                None => function.print_body(state, unit).ok(),
-                Some("code") => {
-                    let details = function.details(state.hash());
-                    print::function::print_instructions(state, function, &details).ok()
-                }
-                _ => None,
-            }
+            print_function_id(state, unit, function, detail)
         }
         Id::Variable {
             unit_index,
@@ -44,12 +39,7 @@ pub(crate) fn print_id(id: Id, detail: Option<&str>, state: &mut PrintState) -> 
     }
 }
 
-pub(crate) fn diff_id(
-    id: (Id, Id),
-    // TODO
-    _detail: Option<&str>,
-    state: &mut DiffState,
-) -> Option<()> {
+pub(crate) fn diff_id(id: (Id, Id), detail: Option<&str>, state: &mut DiffState) -> Option<()> {
     let file_a = state.hash_a().file;
     let file_b = state.hash_b().file;
     match id {
@@ -129,7 +119,7 @@ pub(crate) fn diff_id(
             let unit_b = file_b.units().get(unit_index_b)?;
             let function_a = unit_a.functions().get(function_index_a)?;
             let function_b = unit_b.functions().get(function_index_b)?;
-            PrintHeader::diff_body(state, unit_a, function_a, unit_b, function_b).ok()
+            diff_function_id(state, unit_a, unit_b, function_a, function_b, detail)
         }
         (
             Id::Function {
@@ -140,7 +130,7 @@ pub(crate) fn diff_id(
         ) => {
             let unit = file_a.units().get(unit_index)?;
             let function = unit.functions().get(function_index)?;
-            function.print_body(&mut state.a(), unit).ok()
+            print_function_id(&mut state.a(), unit, function, detail)
         }
         (
             Id::None,
@@ -151,7 +141,7 @@ pub(crate) fn diff_id(
         ) => {
             let unit = file_b.units().get(unit_index)?;
             let function = unit.functions().get(function_index)?;
-            function.print_body(&mut state.b(), unit).ok()
+            print_function_id(&mut state.b(), unit, function, detail)
         }
         (
             Id::Variable {
@@ -190,6 +180,44 @@ pub(crate) fn diff_id(
             let unit = file_b.units().get(unit_index)?;
             let variable = unit.variables().get(variable_index)?;
             variable.print_body(&mut state.b(), unit).ok()
+        }
+        _ => None,
+    }
+}
+
+fn print_function_id(
+    state: &mut PrintState,
+    unit: &Unit,
+    function: &Function,
+    detail: Option<&str>,
+) -> Option<()> {
+    match detail {
+        None => function.print_body(state, unit).ok(),
+        Some("code") => {
+            let details = function.details(state.hash());
+            print::function::print_instructions(state, function, &details).ok()
+        }
+        _ => None,
+    }
+}
+
+fn diff_function_id(
+    state: &mut DiffState,
+    unit_a: &Unit,
+    unit_b: &Unit,
+    function_a: &Function,
+    function_b: &Function,
+    detail: Option<&str>,
+) -> Option<()> {
+    match detail {
+        None => PrintHeader::diff_body(state, unit_a, function_a, unit_b, function_b).ok(),
+        Some("code") => {
+            let details_a = function_a.details(state.hash_a());
+            let details_b = function_b.details(state.hash_b());
+            print::function::diff_instructions(
+                state, function_a, &details_a, function_b, &details_b,
+            )
+            .ok()
         }
         _ => None,
     }

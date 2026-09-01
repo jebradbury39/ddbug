@@ -241,14 +241,11 @@ impl<'input> PrintHeader for Function<'input> {
             let calls_b = calls(b, state.code_b());
             state.field_collapsed("calls", |state| state.list(&(), &calls_a, &(), &calls_b))?;
         }
-        if state.options().print_function_instructions {
-            state.field_collapsed("instructions", |state| {
-                // TODO: diff instructions
-                state.ignore_diff(true, |state| {
-                    state.block((a, &details_a), (b, &details_b), |state, (x, details)| {
-                        print_instructions(state, x, details)
-                    })
-                })
+        if state.options().print_function_instructions
+            && (!a.ranges().is_empty() || !b.ranges().is_empty())
+        {
+            state.field_detail("code", "instructions", |state| {
+                diff_instructions(state, a, &details_a, b, &details_b)
             })?;
         }
         Ok(())
@@ -423,6 +420,31 @@ pub(crate) fn calls(f: &Function, code: Option<&Code>) -> Vec<Call> {
 }
 
 pub(crate) fn print_instructions(
+    state: &mut PrintState,
+    f: &Function,
+    details: &FunctionDetails,
+) -> Result<()> {
+    state.instructions(|state| print_instruction_rows(state, f, details))
+}
+
+pub(crate) fn diff_instructions(
+    state: &mut DiffState,
+    a: &Function,
+    details_a: &FunctionDetails,
+    b: &Function,
+    details_b: &FunctionDetails,
+) -> Result<()> {
+    // TODO: diff instructions
+    state.ignore_diff(true, |state| {
+        state.instructions(|state| {
+            state.block((a, details_a), (b, details_b), |state, (x, details)| {
+                print_instruction_rows(state, x, details)
+            })
+        })
+    })
+}
+
+fn print_instruction_rows(
     state: &mut PrintState,
     f: &Function,
     details: &FunctionDetails,

@@ -594,7 +594,15 @@ fn serve_diff_file(writer: &mut Vec<u8>, mut path: str::Split<char>, context: &O
                         let mut printer = ddbug::HtmlPrinter::new(writer, true);
                         context.print_id(id, None, &mut printer);
                     }
-                    _ => {}
+                    Some("parent") => {
+                        if let Some(parent_id) = context.parent(id) {
+                            write!(writer, "{}", parent_id).unwrap();
+                        }
+                    }
+                    Some(detail) => {
+                        let mut printer = ddbug::HtmlPrinter::new(writer, true);
+                        context.print_id(id, Some(detail), &mut printer);
+                    }
                 }
             }
         }

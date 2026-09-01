@@ -48,13 +48,13 @@ ul.treeroot li.detail {
 ul.treeroot span {
     white-space: nowrap;
 }
-ul.treeroot .del {
+.del {
     background-color: #ffdce0;
 }
-ul.treeroot .add {
+.add {
     background-color: #cdffd8;
 }
-ul.treeroot .mod {
+.mod {
     background-color: #ffffa0;
 }
 ul.treeroot a {
@@ -62,6 +62,21 @@ ul.treeroot a {
 }
 span.field {
     display: inline-block;
+    vertical-align: top;
+}
+ul#detail {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+table.instructions {
+    border-spacing: 0;
+    font-family: monospace;
+    white-space: nowrap;
+}
+table.instructions td {
+    padding: 0 1em 0 0;
+    text-align: left;
     vertical-align: top;
 }
 </style>
@@ -221,7 +236,7 @@ window.onload = function () {
 const FOOTER: &str = r#"</ul>
 </div>
 <div id="detailcol" class="layoutcol">
-<table id="detail"></table>
+<ul id="detail"></ul>
 </div>
 </div>
 </body>
@@ -409,11 +424,11 @@ impl<'w> Printer for HtmlPrinter<'w> {
             return Ok(false);
         }
         debug_assert!(!self.line_started);
-        write!(self.w, "<li class=\"detail\" data-detail=\"{}\">", detail)?;
-        self.line_started = true;
-        self.line(label, &[])?;
-        self.line_started = false;
-        writeln!(self.w, "</li>")?;
+        writeln!(
+            self.w,
+            "<li class=\"detail\" data-detail=\"{}\"><span>{}:</span></li>",
+            detail, label
+        )?;
         Ok(true)
     }
 
@@ -425,8 +440,25 @@ impl<'w> Printer for HtmlPrinter<'w> {
         self.prefix
     }
 
+    fn instructions(&mut self, f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>) -> Result<()> {
+        debug_assert!(!self.line_started);
+        if self.buffer_impl(false, f)? {
+            write!(self.w, "<li><table class=\"instructions\">")?;
+            self.write_buf()?;
+            writeln!(self.w, "</table></li>")?;
+        }
+        Ok(())
+    }
+
     fn instruction(&mut self, address: Option<u64>, mnemonic: &str, buf: &[u8]) -> Result<()> {
-        write!(self.w, "<tr><td>")?;
+        write!(self.w, "<tr")?;
+        match self.prefix {
+            DiffPrefix::None | DiffPrefix::Equal => {}
+            DiffPrefix::Modify => write!(self.w, " class=\"mod\"")?,
+            DiffPrefix::Delete => write!(self.w, " class=\"del\"")?,
+            DiffPrefix::Add => write!(self.w, " class=\"add\"")?,
+        }
+        write!(self.w, "><td>")?;
         if let Some(address) = address {
             write!(self.w, "{:x}", address)?;
         }

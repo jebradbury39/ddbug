@@ -231,6 +231,15 @@ impl<'a> PrintState<'a> {
         })
     }
 
+    pub fn instructions<F>(&mut self, mut f: F) -> Result<()>
+    where
+        F: FnMut(&mut PrintState) -> Result<()>,
+    {
+        let capture = self.capture();
+        self.printer
+            .instructions(&mut |printer| f(&mut capture.state(printer)))
+    }
+
     pub fn instruction<F>(&mut self, address: Option<u64>, mnemonic: &str, mut f: F) -> Result<()>
     where
         F: FnMut(&mut dyn ValuePrinter, &FileHash) -> Result<()>,
@@ -461,6 +470,16 @@ impl<'a> DiffState<'a> {
         Ok(())
     }
 
+    pub fn field_detail<FBody>(&mut self, detail: &str, label: &str, body: FBody) -> Result<()>
+    where
+        FBody: FnMut(&mut DiffState) -> Result<()>,
+    {
+        if !self.printer.indent_detail(detail, label)? {
+            self.indent_impl(true, true, |state| state.label(label), body)?;
+        }
+        Ok(())
+    }
+
     /// Output the header with an indented body.
     ///
     /// If optional is true, then only output if the body is not empty.
@@ -671,6 +690,22 @@ impl<'a> DiffState<'a> {
             }
             Ok(())
         })
+    }
+
+    pub fn instructions<F>(&mut self, mut f: F) -> Result<()>
+    where
+        F: FnMut(&mut DiffState) -> Result<()>,
+    {
+        let capture = self.capture();
+        let mut diff = false;
+        self.printer.instructions(&mut |printer| {
+            let mut state = capture.state(printer);
+            f(&mut state)?;
+            diff |= state.diff;
+            Ok(())
+        })?;
+        self.diff |= diff;
+        Ok(())
     }
 
     pub fn list<T: DiffList>(

@@ -138,6 +138,10 @@ impl<'w> Printer for TextPrinter<'w> {
         self.prefix
     }
 
+    fn instructions(&mut self, f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>) -> Result<()> {
+        f(self)
+    }
+
     fn instruction(&mut self, address: Option<u64>, mnemonic: &str, buf: &[u8]) -> Result<()> {
         self.write_indent()?;
         if let Some(address) = address {

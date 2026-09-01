@@ -56,8 +56,8 @@ pub trait Printer {
 
     /// Optionally prints a labelled reference to a block of detail information.
     ///
-    /// `detail` is the parameter for [`crate::print_id`], with the `id` being
-    /// determined by nesting.
+    /// `detail` is the parameter for [`crate::PrintContext::print_id`] or
+    /// [`crate::DiffContext::print_id`], with the `id` being determined by nesting.
     ///
     /// Returns false if the printer does not support lazy detail information.
     fn indent_detail(&mut self, detail: &str, label: &str) -> Result<bool>;
@@ -65,6 +65,11 @@ pub trait Printer {
     fn prefix(&mut self, prefix: DiffPrefix);
     fn get_prefix(&self) -> DiffPrefix;
 
+    /// Calls `f` to write a block of instructions.
+    ///
+    /// This allows the printer to group the instructions written by `f`.
+    /// Nothing is written if `f` writes no instructions.
+    fn instructions(&mut self, f: &mut dyn FnMut(&mut dyn Printer) -> Result<()>) -> Result<()>;
     fn instruction(&mut self, address: Option<u64>, mnemonic: &str, buf: &[u8]) -> Result<()>;
 }
 
