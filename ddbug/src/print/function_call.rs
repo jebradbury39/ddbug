@@ -136,10 +136,10 @@ impl<'input> Print for FunctionCall<'input> {
                                     )?;
                                 }
                                 (Some(param_a), None) => {
-                                    state.prefix_delete(|state| param_a.print(state, arg_a))?;
+                                    param_a.print(&mut state.a(), arg_a)?;
                                 }
                                 (None, Some(param_b)) => {
-                                    state.prefix_add(|state| param_b.print(state, arg_b))?;
+                                    param_b.print(&mut state.b(), arg_b)?;
                                 }
                                 (None, None) => unreachable!(),
                             }

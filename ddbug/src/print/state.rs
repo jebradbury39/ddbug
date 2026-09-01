@@ -179,15 +179,6 @@ impl<'a> PrintState<'a> {
         r
     }
 
-    fn prefix(
-        &mut self,
-        prefix: DiffPrefix,
-        f: &mut dyn FnMut(&mut PrintState) -> Result<()>,
-    ) -> Result<()> {
-        self.printer.prefix(prefix);
-        f(self)
-    }
-
     pub fn line_break(&mut self) -> Result<()> {
         self.printer.line_break()
     }
@@ -315,6 +306,9 @@ pub(crate) struct DiffState<'a> {
 impl<'a> DiffState<'a> {
     #[inline]
     pub(crate) fn a(&'_ mut self) -> PrintState<'_> {
+        self.printer.prefix(DiffPrefix::Delete);
+        // Assume something is always written.
+        self.diff = true;
         PrintState {
             printer: self.printer,
             inline_depth: self.inline_depth,
@@ -326,6 +320,9 @@ impl<'a> DiffState<'a> {
 
     #[inline]
     pub(crate) fn b(&'_ mut self) -> PrintState<'_> {
+        self.printer.prefix(DiffPrefix::Add);
+        // Assume something is always written.
+        self.diff = true;
         PrintState {
             printer: self.printer,
             inline_depth: self.inline_depth,
@@ -573,26 +570,6 @@ impl<'a> DiffState<'a> {
         r
     }
 
-    pub fn prefix_delete<F>(&mut self, mut f: F) -> Result<()>
-    where
-        F: FnMut(&mut PrintState) -> Result<()>,
-    {
-        self.a().prefix(DiffPrefix::Delete, &mut f)?;
-        // Assume something is always written.
-        self.diff = true;
-        Ok(())
-    }
-
-    pub fn prefix_add<F>(&mut self, mut f: F) -> Result<()>
-    where
-        F: FnMut(&mut PrintState) -> Result<()>,
-    {
-        self.b().prefix(DiffPrefix::Add, &mut f)?;
-        // Assume something is always written.
-        self.diff = true;
-        Ok(())
-    }
-
     // Multiline blocks that are always different, but may be empty.
     pub fn block<F, T>(&mut self, arg_a: T, arg_b: T, mut f: F) -> Result<()>
     where
@@ -602,12 +579,8 @@ impl<'a> DiffState<'a> {
         let capture = self.capture();
         let not_empty = self.printer.buffer(&mut |printer| {
             let mut state = capture.state(printer);
-            state
-                .a()
-                .prefix(DiffPrefix::Delete, &mut |state| f(state, arg_a))?;
-            state
-                .b()
-                .prefix(DiffPrefix::Add, &mut |state| f(state, arg_b))?;
+            f(&mut state.a(), arg_a)?;
+            f(&mut state.b(), arg_b)?;
             Ok(())
         })?;
         if not_empty {
@@ -735,12 +708,12 @@ impl<'a> DiffState<'a> {
                 }
                 Direction::Horizontal => {
                     if let Some(a) = iter_a.next() {
-                        self.prefix_delete(|state| a.print(state, arg_a))?;
+                        a.print(&mut self.a(), arg_a)?;
                     }
                 }
                 Direction::Vertical => {
                     if let Some(b) = iter_b.next() {
-                        self.prefix_add(|state| b.print(state, arg_b))?;
+                        b.print(&mut self.b(), arg_b)?;
                     }
                 }
             }
@@ -765,10 +738,10 @@ impl<'a> DiffState<'a> {
                     T::diff(self, arg_a, a, arg_b, b)?;
                 }
                 MergeResult::Left(a) => {
-                    self.prefix_delete(|state| a.print(state, arg_a))?;
+                    a.print(&mut self.a(), arg_a)?;
                 }
                 MergeResult::Right(b) => {
-                    self.prefix_add(|state| b.print(state, arg_b))?;
+                    b.print(&mut self.b(), arg_b)?;
                 }
             }
         }
@@ -804,12 +777,12 @@ impl<'a> DiffState<'a> {
                 }
                 MergeResult::Left(a) => {
                     if !self.options.ignore_deleted {
-                        self.prefix_delete(|state| a.print(state, arg_a))?;
+                        a.print(&mut self.a(), arg_a)?;
                     }
                 }
                 MergeResult::Right(b) => {
                     if !self.options.ignore_added {
-                        self.prefix_add(|state| b.print(state, arg_b))?;
+                        b.print(&mut self.b(), arg_b)?;
                     }
                 }
             }
