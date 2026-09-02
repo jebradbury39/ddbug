@@ -1,9 +1,6 @@
-use parser::{FileHash, Unit};
-
+use crate::Result;
 use crate::filter;
-use crate::merge::{MergeIterator, MergeResult};
-use crate::print::{DiffState, PrintState, SortList};
-use crate::{Options, Result};
+use crate::print::{DiffState, PrintState};
 
 pub(crate) fn print(state: &mut PrintState) -> Result<()> {
     if state.options().category_file {
@@ -88,24 +85,8 @@ pub(crate) fn diff(state: &mut DiffState) -> Result<()> {
         state.line_break()?;
     }
 
-    state.sort_list(
-        &(),
-        &(),
-        &mut merged_units(state.hash_a(), state.hash_b(), state.options()),
-    )
-}
-
-fn merged_units<'a, 'input>(
-    hash_a: &FileHash<'input>,
-    hash_b: &FileHash<'input>,
-    options: &Options,
-) -> Vec<MergeResult<&'a Unit<'input>, &'a Unit<'input>>> {
-    let mut units_a = filter::filter_units(hash_a.file, options);
-    units_a.sort_by(|x, y| Unit::cmp_id(hash_a, x, hash_a, y, options));
-    let mut units_b = filter::filter_units(hash_b.file, options);
-    units_b.sort_by(|x, y| Unit::cmp_id(hash_b, x, hash_b, y, options));
-    MergeIterator::new(units_a.into_iter(), units_b.into_iter(), |a, b| {
-        Unit::cmp_id(hash_a, a, hash_b, b, options)
-    })
-    .collect()
+    let mut units = state
+        .index()
+        .merged_units(state.hash_a().file, state.hash_b().file);
+    state.sort_list(&(), &(), &mut units)
 }

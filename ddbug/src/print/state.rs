@@ -1,6 +1,7 @@
 use parser::FileHash;
 
 use crate::code::Code;
+use crate::index::DiffIndex;
 use crate::merge::{MergeIterator, MergeResult};
 use crate::print::{DiffList, DiffPrefix, Print, Printer, SortList, ValuePrinter};
 use crate::{Options, Result};
@@ -266,6 +267,7 @@ struct DiffCapture<'a> {
     hash_b: &'a FileHash<'a>,
     code_a: Option<&'a Code<'a>>,
     code_b: Option<&'a Code<'a>>,
+    index: &'a DiffIndex,
     options: &'a Options,
 }
 
@@ -282,6 +284,7 @@ impl<'a> DiffCapture<'a> {
             hash_b: self.hash_b,
             code_a: self.code_a,
             code_b: self.code_b,
+            index: self.index,
             options: self.options,
         }
     }
@@ -300,6 +303,7 @@ pub(crate) struct DiffState<'a> {
     hash_b: &'a FileHash<'a>,
     code_a: Option<&'a Code<'a>>,
     code_b: Option<&'a Code<'a>>,
+    index: &'a DiffIndex,
     options: &'a Options,
 }
 
@@ -353,6 +357,11 @@ impl<'a> DiffState<'a> {
     }
 
     #[inline]
+    pub fn index(&self) -> &'a DiffIndex {
+        self.index
+    }
+
+    #[inline]
     pub fn options(&self) -> &'a Options {
         self.options
     }
@@ -364,6 +373,7 @@ impl<'a> DiffState<'a> {
             hash_b: self.hash_b,
             code_a: self.code_a,
             code_b: self.code_b,
+            index: self.index,
             options: self.options,
         }
     }
@@ -374,6 +384,7 @@ impl<'a> DiffState<'a> {
         hash_b: &'a FileHash<'a>,
         code_a: Option<&'a Code<'a>>,
         code_b: Option<&'a Code<'a>>,
+        index: &'a DiffIndex,
         options: &'a Options,
     ) -> Self {
         DiffState {
@@ -384,6 +395,7 @@ impl<'a> DiffState<'a> {
             hash_b,
             code_a,
             code_b,
+            index,
             options,
         }
     }

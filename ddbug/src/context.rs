@@ -87,6 +87,7 @@ impl<'input> DiffContext<'input> {
             &self.hash_b,
             self.code_a.as_ref(),
             self.code_b.as_ref(),
+            &self.index,
             self.options(),
         );
         print::file::diff(&mut state)
@@ -104,6 +105,7 @@ impl<'input> DiffContext<'input> {
             &self.hash_b,
             self.code_a.as_ref(),
             self.code_b.as_ref(),
+            &self.index,
             self.options(),
         );
         print::id::diff_id(self.index.get(id)?, detail, &mut state)

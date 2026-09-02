@@ -1,78 +1,12 @@
 use std::cmp;
 
-use parser::{FileHash, Function, Range, Type, Unit, Variable};
+use parser::{FileHash, Function, Range, Unit};
 
 use crate::filter;
-use crate::merge::{MergeIterator, MergeResult};
+use crate::index::DiffIndex;
+use crate::merge::MergeResult;
 use crate::print::{self, DiffState, Print, PrintState, SortList, ValuePrinter};
 use crate::{Options, Result, Sort};
-
-pub(crate) fn merged_types<'a, 'input>(
-    hash_a: &FileHash,
-    unit_a: &'a Unit<'input>,
-    hash_b: &FileHash,
-    unit_b: &'a Unit<'input>,
-    options: &Options,
-) -> Vec<MergeResult<&'a Type<'input>, &'a Type<'input>>> {
-    let mut types_a = filter::filter_types(unit_a, hash_a, options, true);
-    types_a.sort_by(|x, y| Type::cmp_id_for_sort(hash_a, x, hash_a, y, options));
-    let mut types_b = filter::filter_types(unit_b, hash_b, options, true);
-    types_b.sort_by(|x, y| Type::cmp_id_for_sort(hash_b, x, hash_b, y, options));
-    MergeIterator::new(types_a.into_iter(), types_b.into_iter(), |a, b| {
-        Type::cmp_id(hash_a, a, hash_b, b)
-    })
-    .collect()
-}
-
-pub(crate) fn merged_functions<'a, 'input>(
-    hash_a: &FileHash,
-    unit_a: &'a Unit<'input>,
-    hash_b: &FileHash,
-    unit_b: &'a Unit<'input>,
-    options: &Options,
-) -> (
-    Vec<MergeResult<&'a Function<'input>, &'a Function<'input>>>,
-    Vec<MergeResult<&'a Function<'input>, &'a Function<'input>>>,
-) {
-    let mut functions_a = filter::filter_functions(unit_a, options);
-    functions_a.sort_by(|x, y| Function::cmp_id_for_sort(hash_a, x, hash_a, y, options));
-    let mut functions_b = filter::filter_functions(unit_b, options);
-    functions_b.sort_by(|x, y| Function::cmp_id_for_sort(hash_b, x, hash_b, y, options));
-    let mut functions = Vec::new();
-    let mut inlined_functions = Vec::new();
-    for function in MergeIterator::new(functions_a.into_iter(), functions_b.into_iter(), |a, b| {
-        <Function as SortList>::cmp_id(hash_a, a, hash_b, b, options)
-    }) {
-        let inline = match function {
-            MergeResult::Both(a, b) => a.size().is_none() || b.size().is_none(),
-            MergeResult::Left(a) => a.size().is_none(),
-            MergeResult::Right(b) => b.size().is_none(),
-        };
-        if inline {
-            inlined_functions.push(function);
-        } else {
-            functions.push(function);
-        }
-    }
-    (functions, inlined_functions)
-}
-
-pub(crate) fn merged_variables<'a, 'input>(
-    hash_a: &FileHash,
-    unit_a: &'a Unit<'input>,
-    hash_b: &FileHash,
-    unit_b: &'a Unit<'input>,
-    options: &Options,
-) -> Vec<MergeResult<&'a Variable<'input>, &'a Variable<'input>>> {
-    let mut variables_a = filter::filter_variables(unit_a, options);
-    variables_a.sort_by(|x, y| Variable::cmp_id_for_sort(hash_a, x, hash_a, y, options));
-    let mut variables_b = filter::filter_variables(unit_b, options);
-    variables_b.sort_by(|x, y| Variable::cmp_id_for_sort(hash_b, x, hash_b, y, options));
-    MergeIterator::new(variables_a.into_iter(), variables_b.into_iter(), |a, b| {
-        <Variable as SortList>::cmp_id(hash_a, a, hash_b, b, options)
-    })
-    .collect()
-}
 
 pub(crate) fn print_ref(unit: &Unit, w: &mut dyn ValuePrinter) -> Result<()> {
     let name = unit.name().unwrap_or("<anon>");
@@ -259,18 +193,15 @@ pub(crate) fn diff_body(state: &mut DiffState, unit_a: &Unit, unit_b: &Unit) -> 
 
     let diff_types = |state: &mut DiffState| -> Result<()> {
         if options.category_type {
-            let mut types = merged_types(state.hash_a(), unit_a, state.hash_b(), unit_b, options);
+            let mut types = state.index().merged_types(unit_a, unit_b);
             state.sort_list(unit_a, unit_b, &mut types)?;
         }
         Ok(())
     };
-    let merged_functions = |state: &mut DiffState| {
-        merged_functions(state.hash_a(), unit_a, state.hash_b(), unit_b, options)
-    };
+    let merged_functions = |state: &mut DiffState| merged_functions(unit_a, unit_b, state.index());
     let diff_variables = |state: &mut DiffState| -> Result<()> {
         if options.category_variable {
-            let mut variables =
-                merged_variables(state.hash_a(), unit_a, state.hash_b(), unit_b, options);
+            let mut variables = state.index().merged_variables(unit_a, unit_b);
             state.sort_list(unit_a, unit_b, &mut variables)?;
         }
         Ok(())
@@ -304,6 +235,31 @@ pub(crate) fn diff_body(state: &mut DiffState, unit_a: &Unit, unit_b: &Unit) -> 
         diff_variables(state)?;
     }
     Ok(())
+}
+
+fn merged_functions<'a, 'input>(
+    unit_a: &'a Unit<'input>,
+    unit_b: &'a Unit<'input>,
+    index: &DiffIndex,
+) -> (
+    Vec<MergeResult<&'a Function<'input>, &'a Function<'input>>>,
+    Vec<MergeResult<&'a Function<'input>, &'a Function<'input>>>,
+) {
+    let mut functions = Vec::new();
+    let mut inlined_functions = Vec::new();
+    for function in index.merged_functions(unit_a, unit_b) {
+        let inline = match function {
+            MergeResult::Both(a, b) => a.size().is_none() || b.size().is_none(),
+            MergeResult::Left(a) => a.size().is_none(),
+            MergeResult::Right(b) => b.size().is_none(),
+        };
+        if inline {
+            inlined_functions.push(function);
+        } else {
+            functions.push(function);
+        }
+    }
+    (functions, inlined_functions)
 }
 
 pub(crate) fn diff(state: &mut DiffState, unit_a: &Unit, unit_b: &Unit) -> Result<()> {
