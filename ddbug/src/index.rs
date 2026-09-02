@@ -89,7 +89,8 @@ impl PrintIndex {
 }
 
 fn assign_ids(file: &File, options: &Options) -> Vec<Id> {
-    let mut ids = Vec::new();
+    // id 0 is reserved for None.
+    let mut ids = vec![Id::None];
     for (unit_index, unit) in file.units().iter().enumerate() {
         unit.set_id(ids.len());
         ids.push(Id::Unit { unit_index });
@@ -128,6 +129,7 @@ pub(crate) struct DiffIndex {
     units: Vec<UnitIndex>,
 }
 
+#[derive(Default)]
 struct UnitIndex {
     types: Range<usize>,
     functions: Range<usize>,
@@ -161,7 +163,7 @@ impl DiffIndex {
     }
 
     fn unit_ids(&self) -> &[(Id, Id)] {
-        &self.ids[..self.units.len()]
+        &self.ids[1..self.units.len()]
     }
 
     fn unit(&self, unit_id: usize) -> Option<&UnitIndex> {
@@ -235,7 +237,8 @@ fn assign_merged_ids(hash_a: &FileHash, hash_b: &FileHash, options: &Options) ->
         .collect();
 
     // Assign the unit ids first, so both `ids` and `units` can be indexed by unit id.
-    let mut ids = Vec::new();
+    // id 0 is reserved for None.
+    let mut ids = vec![(Id::None, Id::None)];
     for unit in &unit_merge {
         match *unit {
             MergeResult::Both((unit_index_a, unit_a), (unit_index_b, unit_b)) => {
@@ -261,7 +264,7 @@ fn assign_merged_ids(hash_a: &FileHash, hash_b: &FileHash, options: &Options) ->
         }
     }
 
-    let mut units = Vec::new();
+    let mut units = vec![UnitIndex::default()];
     for unit in &unit_merge {
         units.push(match *unit {
             MergeResult::Both((unit_index_a, unit_a), (unit_index_b, unit_b)) => {
