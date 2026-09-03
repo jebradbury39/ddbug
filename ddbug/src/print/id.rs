@@ -55,14 +55,6 @@ pub(crate) fn diff_id(id: (Id, Id), detail: Option<&str>, state: &mut DiffState)
             let unit_b = file_b.units().get(unit_index_b)?;
             print::unit::diff_body(state, unit_a, unit_b).ok()
         }
-        (Id::Unit { unit_index }, Id::None) => {
-            let unit = file_a.units().get(unit_index)?;
-            print::unit::print_body(unit, &mut state.a()).ok()
-        }
-        (Id::None, Id::Unit { unit_index }) => {
-            let unit = file_b.units().get(unit_index)?;
-            print::unit::print_body(unit, &mut state.b()).ok()
-        }
         (
             Id::Type {
                 unit_index: unit_index_a,
@@ -78,32 +70,6 @@ pub(crate) fn diff_id(id: (Id, Id), detail: Option<&str>, state: &mut DiffState)
             let type_a = unit_a.types().get(type_index_a)?;
             let type_b = unit_b.types().get(type_index_b)?;
             print::types::diff_body(state, unit_a, type_a, unit_b, type_b).ok()
-        }
-        (
-            Id::Type {
-                unit_index,
-                type_index,
-            },
-            Id::None,
-        ) => {
-            let unit = file_a.units().get(unit_index)?;
-            let ty = unit.types().get(type_index)?;
-            print::types::kind(ty)
-                .and_then(|kind| kind.print_body(&mut state.a(), unit))
-                .ok()
-        }
-        (
-            Id::None,
-            Id::Type {
-                unit_index,
-                type_index,
-            },
-        ) => {
-            let unit = file_b.units().get(unit_index)?;
-            let ty = unit.types().get(type_index)?;
-            print::types::kind(ty)
-                .and_then(|kind| kind.print_body(&mut state.b(), unit))
-                .ok()
         }
         (
             Id::Function {
@@ -122,28 +88,6 @@ pub(crate) fn diff_id(id: (Id, Id), detail: Option<&str>, state: &mut DiffState)
             diff_function_id(state, unit_a, unit_b, function_a, function_b, detail)
         }
         (
-            Id::Function {
-                unit_index,
-                function_index,
-            },
-            Id::None,
-        ) => {
-            let unit = file_a.units().get(unit_index)?;
-            let function = unit.functions().get(function_index)?;
-            print_function_id(&mut state.a(), unit, function, detail)
-        }
-        (
-            Id::None,
-            Id::Function {
-                unit_index,
-                function_index,
-            },
-        ) => {
-            let unit = file_b.units().get(unit_index)?;
-            let function = unit.functions().get(function_index)?;
-            print_function_id(&mut state.b(), unit, function, detail)
-        }
-        (
             Id::Variable {
                 unit_index: unit_index_a,
                 variable_index: variable_index_a,
@@ -159,28 +103,8 @@ pub(crate) fn diff_id(id: (Id, Id), detail: Option<&str>, state: &mut DiffState)
             let variable_b = unit_b.variables().get(variable_index_b)?;
             PrintHeader::diff_body(state, unit_a, variable_a, unit_b, variable_b).ok()
         }
-        (
-            Id::Variable {
-                unit_index,
-                variable_index,
-            },
-            Id::None,
-        ) => {
-            let unit = file_a.units().get(unit_index)?;
-            let variable = unit.variables().get(variable_index)?;
-            variable.print_body(&mut state.a(), unit).ok()
-        }
-        (
-            Id::None,
-            Id::Variable {
-                unit_index,
-                variable_index,
-            },
-        ) => {
-            let unit = file_b.units().get(unit_index)?;
-            let variable = unit.variables().get(variable_index)?;
-            variable.print_body(&mut state.b(), unit).ok()
-        }
+        (id, Id::None) => print_id(id, detail, &mut state.a()),
+        (Id::None, id) => print_id(id, detail, &mut state.b()),
         _ => None,
     }
 }
