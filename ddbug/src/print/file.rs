@@ -1,5 +1,4 @@
 use crate::Result;
-use crate::filter;
 use crate::print::{DiffState, PrintState};
 
 pub(crate) fn print(state: &mut PrintState) -> Result<()> {
@@ -36,10 +35,8 @@ pub(crate) fn print(state: &mut PrintState) -> Result<()> {
         state.line_break()?;
     }
 
-    state.sort_list(
-        &(),
-        &mut filter::filter_units(state.hash().file, state.options()),
-    )
+    let mut units = state.index().units(state.hash().file);
+    state.sort_list(&(), &mut units)
 }
 
 pub(crate) fn diff(state: &mut DiffState) -> Result<()> {

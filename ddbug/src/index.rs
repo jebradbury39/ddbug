@@ -69,61 +69,7 @@ impl Id {
     }
 }
 
-pub(crate) struct PrintIndex {
-    ids: Vec<Id>,
-}
-
-impl PrintIndex {
-    pub fn new(file: &File, options: &Options) -> PrintIndex {
-        let ids = assign_ids(file, options);
-        PrintIndex { ids }
-    }
-
-    pub(crate) fn get(&self, id: usize) -> Option<Id> {
-        self.ids.get(id).copied()
-    }
-
-    pub fn parent(&self, id: usize, file: &File) -> Option<usize> {
-        self.get(id)?.parent(file)
-    }
-}
-
-fn assign_ids(file: &File, options: &Options) -> Vec<Id> {
-    // id 0 is reserved for None.
-    let mut ids = vec![Id::None];
-    for (unit_index, unit) in file.units().iter().enumerate() {
-        unit.set_id(ids.len());
-        ids.push(Id::Unit { unit_index });
-        assign_ids_in_unit(unit_index, unit, options, &mut ids);
-    }
-    ids
-}
-
-fn assign_ids_in_unit(unit_index: usize, unit: &Unit, _options: &Options, ids: &mut Vec<Id>) {
-    for (type_index, ty) in unit.types().iter().enumerate() {
-        ty.set_id(ids.len());
-        ids.push(Id::Type {
-            unit_index,
-            type_index,
-        });
-    }
-    for (function_index, function) in unit.functions().iter().enumerate() {
-        function.set_id(ids.len());
-        ids.push(Id::Function {
-            unit_index,
-            function_index,
-        });
-    }
-    for (variable_index, variable) in unit.variables().iter().enumerate() {
-        variable.set_id(ids.len());
-        ids.push(Id::Variable {
-            unit_index,
-            variable_index,
-        });
-    }
-}
-
-pub(crate) struct DiffIndex {
+pub(crate) struct Index {
     ids: Vec<(Id, Id)>,
     // Indexed by unit id. Currently only the merged unit entries are used.
     units: Vec<UnitIndex>,
@@ -136,18 +82,36 @@ struct UnitIndex {
     variables: Range<usize>,
 }
 
-impl DiffIndex {
-    pub fn new(file_a: &FileHash, file_b: &FileHash, options: &Options) -> DiffIndex {
-        assign_merged_ids(file_a, file_b, options)
+impl Index {
+    pub fn new(file: &FileHash, options: &Options) -> Index {
+        assign_merged_ids(file, None, options)
     }
 
-    pub fn get(&self, id: usize) -> Option<(Id, Id)> {
+    pub fn new_diff(file_a: &FileHash, file_b: &FileHash, options: &Options) -> Index {
+        assign_merged_ids(file_a, Some(file_b), options)
+    }
+
+    pub fn get(&self, id: usize) -> Option<Id> {
+        self.get_pair(id).map(|x| x.0)
+    }
+
+    pub fn get_pair(&self, id: usize) -> Option<(Id, Id)> {
         self.ids.get(id).copied()
     }
 
-    pub fn parent(&self, id: usize, file_a: &File, file_b: &File) -> Option<usize> {
-        let (id_a, id_b) = self.get(id)?;
-        id_a.parent(file_a).or_else(|| id_b.parent(file_b))
+    pub fn parent(&self, id: usize, file_a: &File, file_b: Option<&File>) -> Option<usize> {
+        let (id_a, id_b) = self.get_pair(id)?;
+        id_a.parent(file_a).or_else(|| id_b.parent(file_b?))
+    }
+
+    pub fn units<'a, 'input>(&self, file: &'a File<'input>) -> Vec<&'a Unit<'input>> {
+        single(
+            Side::Left,
+            self.unit_ids(),
+            |a| file.units().get(a.unit_index()?),
+            // TODO: enumerate all units, but lazily merge their contents
+            |_| true,
+        )
     }
 
     pub fn merged_units<'a, 'input>(
@@ -172,6 +136,27 @@ impl DiffIndex {
         self.units.get(unit_id)
     }
 
+    fn unit_side(&self, unit_id: usize) -> Side {
+        match self.get_pair(unit_id) {
+            Some((Id::Unit { .. }, Id::None)) => Side::Left,
+            Some((Id::None, Id::Unit { .. })) => Side::Right,
+            _ => panic!("unit is not single sided"),
+        }
+    }
+
+    pub fn types<'a, 'input>(
+        &self,
+        unit: &'a Unit<'input>,
+        options: &Options,
+    ) -> Vec<&'a Type<'input>> {
+        single(
+            self.unit_side(unit.id()),
+            self.type_ids(unit.id()),
+            |a| unit.types().get(a.type_index()?),
+            |ty| filter::filter_type(ty, options),
+        )
+    }
+
     pub fn merged_types<'a, 'input>(
         &self,
         unit_a: &'a Unit<'input>,
@@ -192,6 +177,19 @@ impl DiffIndex {
             .unwrap_or_default()
     }
 
+    pub fn functions<'a, 'input>(
+        &self,
+        unit: &'a Unit<'input>,
+        options: &Options,
+    ) -> Vec<&'a Function<'input>> {
+        single(
+            self.unit_side(unit.id()),
+            self.function_ids(unit.id()),
+            |a| unit.functions().get(a.function_index()?),
+            |function| filter::filter_function(function, options),
+        )
+    }
+
     pub fn merged_functions<'a, 'input>(
         &self,
         unit_a: &'a Unit<'input>,
@@ -210,6 +208,19 @@ impl DiffIndex {
         self.unit(unit_id)
             .map(|unit| &self.ids[unit.functions.clone()])
             .unwrap_or_default()
+    }
+
+    pub fn variables<'a, 'input>(
+        &self,
+        unit: &'a Unit<'input>,
+        options: &Options,
+    ) -> Vec<&'a Variable<'input>> {
+        single(
+            self.unit_side(unit.id()),
+            self.variable_ids(unit.id()),
+            |a| unit.variables().get(a.variable_index()?),
+            |variable| filter::filter_variable(variable, options),
+        )
     }
 
     pub fn merged_variables<'a, 'input>(
@@ -233,16 +244,22 @@ impl DiffIndex {
     }
 }
 
-fn assign_merged_ids(hash_a: &FileHash, hash_b: &FileHash, options: &Options) -> DiffIndex {
+fn assign_merged_ids(hash_a: &FileHash, hash_b: Option<&FileHash>, options: &Options) -> Index {
     let mut units_a = filter::enumerate_index_units(hash_a.file, options);
-    units_a.sort_by(|x, y| Unit::cmp_id(hash_a, x.1, hash_a, y.1, options));
-    let mut units_b = filter::enumerate_index_units(hash_b.file, options);
-    units_b.sort_by(|x, y| Unit::cmp_id(hash_b, x.1, hash_b, y.1, options));
-    let unit_merge: Vec<_> =
-        MergeIterator::new(units_a.into_iter(), units_b.into_iter(), |a, b| {
-            Unit::cmp_id(hash_a, a.1, hash_b, b.1, options)
-        })
-        .collect();
+    let (hash_b, unit_merge) = if let Some(hash_b) = hash_b {
+        let mut units_b = filter::enumerate_index_units(hash_b.file, options);
+        units_a.sort_by(|x, y| Unit::cmp_id(hash_a, x.1, hash_a, y.1, options));
+        units_b.sort_by(|x, y| Unit::cmp_id(hash_b, x.1, hash_b, y.1, options));
+        let unit_merge: Vec<_> =
+            MergeIterator::new(units_a.into_iter(), units_b.into_iter(), |a, b| {
+                Unit::cmp_id(hash_a, a.1, hash_b, b.1, options)
+            })
+            .collect();
+        (hash_b, unit_merge)
+    } else {
+        // All entries are `Left` so hash_b is never used.
+        (hash_a, units_a.into_iter().map(MergeResult::Left).collect())
+    };
 
     // Assign the unit ids first, so both `ids` and `units` can be indexed by unit id.
     // id 0 is reserved for None.
@@ -288,62 +305,52 @@ fn assign_merged_ids(hash_a: &FileHash, hash_b: &FileHash, options: &Options) ->
                 )
             }
             MergeResult::Left((unit_index, unit)) => {
-                assign_unmerged_ids_in_unit(unit_index, unit, options, &mut ids, true)
+                assign_unmerged_ids_in_unit(hash_a, unit_index, unit, &mut ids, Side::Left)
             }
             MergeResult::Right((unit_index, unit)) => {
-                assign_unmerged_ids_in_unit(unit_index, unit, options, &mut ids, false)
+                assign_unmerged_ids_in_unit(hash_b, unit_index, unit, &mut ids, Side::Right)
             }
         });
     }
 
-    DiffIndex { ids, units }
+    Index { ids, units }
 }
 
 fn assign_unmerged_ids_in_unit(
+    hash: &FileHash,
     unit_index: usize,
     unit: &Unit,
-    _options: &Options,
     ids: &mut Vec<(Id, Id)>,
-    left: bool,
+    side: Side,
 ) -> UnitIndex {
     let types_start = ids.len();
-    for (type_index, ty) in unit.types().iter().enumerate() {
+    for (type_index, ty) in filter::enumerate_index_types(unit, hash, false) {
         ty.set_id(ids.len());
         let id = Id::Type {
             unit_index,
             type_index,
         };
-        if left {
-            ids.push((id, Id::None));
-        } else {
-            ids.push((Id::None, id));
-        }
+        ids.push(side.set(id));
     }
+
     let functions_start = ids.len();
-    for (function_index, function) in unit.functions().iter().enumerate() {
+    for (function_index, function) in filter::enumerate_index_functions(unit) {
         function.set_id(ids.len());
         let id = Id::Function {
             unit_index,
             function_index,
         };
-        if left {
-            ids.push((id, Id::None));
-        } else {
-            ids.push((Id::None, id));
-        }
+        ids.push(side.set(id));
     }
+
     let variables_start = ids.len();
-    for (variable_index, variable) in unit.variables().iter().enumerate() {
+    for (variable_index, variable) in filter::enumerate_index_variables(unit) {
         variable.set_id(ids.len());
         let id = Id::Variable {
             unit_index,
             variable_index,
         };
-        if left {
-            ids.push((id, Id::None));
-        } else {
-            ids.push((Id::None, id));
-        }
+        ids.push(side.set(id));
     }
     UnitIndex {
         types: types_start..functions_start,
@@ -509,7 +516,44 @@ fn assign_merged_ids_in_unit(
     }
 }
 
-/// Convert a range of `DiffIndex::ids` into the merged items that they refer to.
+#[derive(Clone, Copy, PartialEq)]
+enum Side {
+    Left,
+    Right,
+}
+
+impl Side {
+    fn get(self, id: (Id, Id)) -> Id {
+        match self {
+            Side::Left => id.0,
+            Side::Right => id.1,
+        }
+    }
+
+    fn set(self, id: Id) -> (Id, Id) {
+        match self {
+            Side::Left => (id, Id::None),
+            Side::Right => (Id::None, id),
+        }
+    }
+}
+
+/// Convert a range of `Index::ids` into the items of a single file.
+///
+/// `keep` applies the user specified filter options.
+fn single<'a, T: 'a>(
+    side: Side,
+    ids: &[(Id, Id)],
+    get: impl Fn(Id) -> Option<&'a T>,
+    keep: impl Fn(&&T) -> bool,
+) -> Vec<&'a T> {
+    ids.iter()
+        .filter_map(move |ids| get(side.get(*ids)))
+        .filter(keep)
+        .collect()
+}
+
+/// Convert a range of `Index::ids` into the merged items that they refer to.
 ///
 /// `keep` applies the user specified filter options.
 fn merge<'a, T: 'a>(

@@ -8,16 +8,6 @@ use parser::{
 
 use crate::Options;
 
-pub(crate) fn filter_units<'input, 'file>(
-    file: &'file File<'input>,
-    options: &Options,
-) -> Vec<&'file Unit<'input>> {
-    file.units()
-        .iter()
-        .filter(|a| filter_unit(a, options))
-        .collect()
-}
-
 pub(crate) fn enumerate_index_units<'input, 'file>(
     file: &'file File<'input>,
     options: &Options,
@@ -62,21 +52,6 @@ fn inline_types(unit: &Unit, hash: &FileHash) -> HashSet<TypeOffset> {
     inline_types
 }
 
-/// Filter the list of types using the options.
-/// Perform additional filtering when diffing.
-pub(crate) fn filter_types<'input, 'unit>(
-    unit: &'unit Unit<'input>,
-    hash: &FileHash,
-    options: &Options,
-    diff: bool,
-) -> Vec<&'unit Type<'input>> {
-    let inline_types = inline_types(unit, hash);
-    unit.types()
-        .iter()
-        .filter(|a| index_type(a, diff, &inline_types) && filter_type(a, options))
-        .collect()
-}
-
 pub(crate) fn enumerate_index_types<'input, 'unit>(
     unit: &'unit Unit<'input>,
     hash: &FileHash,
@@ -90,16 +65,6 @@ pub(crate) fn enumerate_index_types<'input, 'unit>(
         .collect()
 }
 
-pub(crate) fn filter_functions<'input, 'unit>(
-    unit: &'unit Unit<'input>,
-    options: &Options,
-) -> Vec<&'unit Function<'input>> {
-    unit.functions()
-        .iter()
-        .filter(|a| index_function(a) && filter_function(a, options))
-        .collect()
-}
-
 pub(crate) fn enumerate_index_functions<'input, 'unit>(
     unit: &'unit Unit<'input>,
 ) -> Vec<(usize, &'unit Function<'input>)> {
@@ -107,16 +72,6 @@ pub(crate) fn enumerate_index_functions<'input, 'unit>(
         .iter()
         .enumerate()
         .filter(|a| index_function(a.1))
-        .collect()
-}
-
-pub(crate) fn filter_variables<'input, 'unit>(
-    unit: &'unit Unit<'input>,
-    options: &Options,
-) -> Vec<&'unit Variable<'input>> {
-    unit.variables()
-        .iter()
-        .filter(|a| index_variable(a) && filter_variable(a, options))
         .collect()
 }
 

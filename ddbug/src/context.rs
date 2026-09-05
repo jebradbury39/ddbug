@@ -1,7 +1,7 @@
 use parser::{File, FileHash};
 
 use crate::code::Code;
-use crate::index::{DiffIndex, PrintIndex};
+use crate::index::Index;
 use crate::print::bloat::BloatIndex;
 use crate::print::{self, DiffState, PrintState, Printer};
 use crate::{Options, Result};
@@ -9,7 +9,7 @@ use crate::{Options, Result};
 pub struct PrintContext<'input> {
     hash: FileHash<'input>,
     code: Option<Code<'input>>,
-    index: PrintIndex,
+    index: Index,
     options: Options,
 }
 
@@ -17,7 +17,7 @@ impl<'input> PrintContext<'input> {
     pub fn new(file: &'input File<'input>, options: Options) -> Self {
         let hash = FileHash::new(file);
         let code = Code::new(file);
-        let index = PrintIndex::new(file, &options);
+        let index = Index::new(&hash, &options);
         PrintContext {
             hash,
             code,
@@ -27,7 +27,13 @@ impl<'input> PrintContext<'input> {
     }
 
     pub fn print(&self, printer: &mut dyn Printer) -> Result<()> {
-        let mut state = PrintState::new(printer, &self.hash, self.code.as_ref(), self.options());
+        let mut state = PrintState::new(
+            printer,
+            &self.hash,
+            self.code.as_ref(),
+            &self.index,
+            self.options(),
+        );
         print::file::print(&mut state)
     }
 
@@ -37,7 +43,13 @@ impl<'input> PrintContext<'input> {
         detail: Option<&str>,
         printer: &mut dyn Printer,
     ) -> Option<()> {
-        let mut state = PrintState::new(printer, &self.hash, self.code.as_ref(), self.options());
+        let mut state = PrintState::new(
+            printer,
+            &self.hash,
+            self.code.as_ref(),
+            &self.index,
+            self.options(),
+        );
         print::id::print_id(self.index.get(id)?, detail, &mut state)
     }
 
@@ -46,7 +58,7 @@ impl<'input> PrintContext<'input> {
     }
 
     pub fn parent(&self, id: usize) -> Option<usize> {
-        self.index.parent(id, self.hash.file)
+        self.index.parent(id, self.hash.file, None)
     }
 }
 
@@ -55,7 +67,7 @@ pub struct DiffContext<'input> {
     hash_b: FileHash<'input>,
     code_a: Option<Code<'input>>,
     code_b: Option<Code<'input>>,
-    index: DiffIndex,
+    index: Index,
     options: Options,
 }
 
@@ -69,7 +81,7 @@ impl<'input> DiffContext<'input> {
         let hash_b = FileHash::new(file_b);
         let code_a = Code::new(file_a);
         let code_b = Code::new(file_b);
-        let index = DiffIndex::new(&hash_a, &hash_b, &options);
+        let index = Index::new_diff(&hash_a, &hash_b, &options);
         DiffContext {
             hash_a,
             hash_b,
@@ -108,7 +120,7 @@ impl<'input> DiffContext<'input> {
             &self.index,
             self.options(),
         );
-        print::id::diff_id(self.index.get(id)?, detail, &mut state)
+        print::id::diff_id(self.index.get_pair(id)?, detail, &mut state)
     }
 
     pub fn options(&self) -> &Options {
@@ -116,13 +128,14 @@ impl<'input> DiffContext<'input> {
     }
 
     pub fn parent(&self, id: usize) -> Option<usize> {
-        self.index.parent(id, self.hash_a.file, self.hash_b.file)
+        self.index
+            .parent(id, self.hash_a.file, Some(self.hash_b.file))
     }
 }
 
 pub struct BloatContext<'input> {
     hash: FileHash<'input>,
-    index: PrintIndex,
+    index: Index,
     bloat: BloatIndex,
     options: Options,
 }
@@ -130,7 +143,7 @@ pub struct BloatContext<'input> {
 impl<'input> BloatContext<'input> {
     pub fn new(file: &'input File<'input>, options: Options) -> Self {
         let hash = FileHash::new(file);
-        let index = PrintIndex::new(file, &options);
+        let index = Index::new(&hash, &options);
         let bloat = BloatIndex::new(file);
         BloatContext {
             hash,
@@ -141,12 +154,12 @@ impl<'input> BloatContext<'input> {
     }
 
     pub fn print(&self, printer: &mut dyn Printer) -> Result<()> {
-        let mut state = PrintState::new(printer, &self.hash, None, self.options());
+        let mut state = PrintState::new(printer, &self.hash, None, &self.index, self.options());
         self.bloat.print(&mut state)
     }
 
     pub fn print_id(&self, id: usize, printer: &mut dyn Printer) -> Option<()> {
-        let mut state = PrintState::new(printer, &self.hash, None, self.options());
+        let mut state = PrintState::new(printer, &self.hash, None, &self.index, self.options());
         self.bloat.print_id(self.index.get(id)?, &mut state)
     }
 
@@ -155,6 +168,6 @@ impl<'input> BloatContext<'input> {
     }
 
     pub fn parent(&self, id: usize) -> Option<usize> {
-        self.index.parent(id, self.hash.file)
+        self.index.parent(id, self.hash.file, None)
     }
 }

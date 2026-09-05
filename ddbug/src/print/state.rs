@@ -1,7 +1,7 @@
 use parser::FileHash;
 
 use crate::code::Code;
-use crate::index::DiffIndex;
+use crate::index::Index;
 use crate::merge::{MergeIterator, MergeResult};
 use crate::print::{DiffList, DiffPrefix, Print, Printer, SortList, ValuePrinter};
 use crate::{Options, Result};
@@ -12,6 +12,7 @@ struct PrintCapture<'a> {
     inline_depth: usize,
     hash: &'a FileHash<'a>,
     code: Option<&'a Code<'a>>,
+    index: &'a Index,
     options: &'a Options,
 }
 
@@ -25,6 +26,7 @@ impl<'a> PrintCapture<'a> {
             inline_depth: self.inline_depth,
             hash: self.hash,
             code: self.code,
+            index: self.index,
             options: self.options,
         }
     }
@@ -39,6 +41,7 @@ pub(crate) struct PrintState<'a> {
     // The remaining fields contain information that is commonly needed in print methods.
     hash: &'a FileHash<'a>,
     code: Option<&'a Code<'a>>,
+    index: &'a Index,
     options: &'a Options,
 }
 
@@ -54,6 +57,11 @@ impl<'a> PrintState<'a> {
     }
 
     #[inline]
+    pub fn index(&self) -> &'a Index {
+        self.index
+    }
+
+    #[inline]
     pub fn options(&self) -> &'a Options {
         self.options
     }
@@ -63,6 +71,7 @@ impl<'a> PrintState<'a> {
             inline_depth: self.inline_depth,
             hash: self.hash,
             code: self.code,
+            index: self.index,
             options: self.options,
         }
     }
@@ -71,6 +80,7 @@ impl<'a> PrintState<'a> {
         printer: &'a mut dyn Printer,
         hash: &'a FileHash<'a>,
         code: Option<&'a Code<'a>>,
+        index: &'a Index,
         options: &'a Options,
     ) -> Self {
         PrintState {
@@ -78,6 +88,7 @@ impl<'a> PrintState<'a> {
             inline_depth: options.inline_depth,
             hash,
             code,
+            index,
             options,
         }
     }
@@ -267,7 +278,7 @@ struct DiffCapture<'a> {
     hash_b: &'a FileHash<'a>,
     code_a: Option<&'a Code<'a>>,
     code_b: Option<&'a Code<'a>>,
-    index: &'a DiffIndex,
+    index: &'a Index,
     options: &'a Options,
 }
 
@@ -303,7 +314,7 @@ pub(crate) struct DiffState<'a> {
     hash_b: &'a FileHash<'a>,
     code_a: Option<&'a Code<'a>>,
     code_b: Option<&'a Code<'a>>,
-    index: &'a DiffIndex,
+    index: &'a Index,
     options: &'a Options,
 }
 
@@ -318,6 +329,7 @@ impl<'a> DiffState<'a> {
             inline_depth: self.inline_depth,
             hash: self.hash_a,
             code: self.code_a,
+            index: self.index,
             options: self.options,
         }
     }
@@ -332,6 +344,7 @@ impl<'a> DiffState<'a> {
             inline_depth: self.inline_depth,
             hash: self.hash_b,
             code: self.code_b,
+            index: self.index,
             options: self.options,
         }
     }
@@ -357,7 +370,7 @@ impl<'a> DiffState<'a> {
     }
 
     #[inline]
-    pub fn index(&self) -> &'a DiffIndex {
+    pub fn index(&self) -> &'a Index {
         self.index
     }
 
@@ -384,7 +397,7 @@ impl<'a> DiffState<'a> {
         hash_b: &'a FileHash<'a>,
         code_a: Option<&'a Code<'a>>,
         code_b: Option<&'a Code<'a>>,
-        index: &'a DiffIndex,
+        index: &'a Index,
         options: &'a Options,
     ) -> Self {
         DiffState {

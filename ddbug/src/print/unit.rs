@@ -2,8 +2,7 @@ use std::cmp;
 
 use parser::{FileHash, Function, Range, Unit};
 
-use crate::filter;
-use crate::index::DiffIndex;
+use crate::index::Index;
 use crate::merge::MergeResult;
 use crate::print::{self, DiffState, Print, PrintState, SortList, ValuePrinter};
 use crate::{Options, Result, Sort};
@@ -72,21 +71,21 @@ pub(crate) fn print_body(unit: &Unit, state: &mut PrintState) -> Result<()> {
 
     let print_types = |state: &mut PrintState| -> Result<()> {
         if options.category_type {
-            let mut types = filter::filter_types(unit, state.hash(), options, false);
+            let mut types = state.index().types(unit, options);
             state.sort_list(unit, &mut types)?;
         }
         Ok(())
     };
     let print_functions = |state: &mut PrintState| -> Result<()> {
         if options.category_function {
-            let mut functions = filter::filter_functions(unit, options);
+            let mut functions = state.index().functions(unit, options);
             state.sort_list(unit, &mut functions)?;
         }
         Ok(())
     };
     let print_variables = |state: &mut PrintState| -> Result<()> {
         if options.category_variable {
-            let mut variables = filter::filter_variables(unit, options);
+            let mut variables = state.index().variables(unit, options);
             state.sort_list(unit, &mut variables)?;
         }
         Ok(())
@@ -98,7 +97,7 @@ pub(crate) fn print_body(unit: &Unit, state: &mut PrintState) -> Result<()> {
         }
         state.field_collapsed("types", &print_types)?;
         if options.category_function {
-            let functions = filter::filter_functions(unit, options);
+            let functions = state.index().functions(unit, options);
             let (mut functions, mut inlined_functions): (Vec<_>, Vec<_>) =
                 functions.into_iter().partition(|f| f.size().is_some());
             state.field_collapsed("functions", |state| state.sort_list(unit, &mut functions))?;
@@ -241,7 +240,7 @@ pub(crate) fn diff_body(state: &mut DiffState, unit_a: &Unit, unit_b: &Unit) -> 
 fn merged_functions<'a, 'input>(
     unit_a: &'a Unit<'input>,
     unit_b: &'a Unit<'input>,
-    index: &DiffIndex,
+    index: &Index,
     options: &Options,
 ) -> (
     Vec<MergeResult<&'a Function<'input>, &'a Function<'input>>>,
