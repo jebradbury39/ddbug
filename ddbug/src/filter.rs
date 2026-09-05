@@ -18,13 +18,14 @@ pub(crate) fn filter_units<'input, 'file>(
         .collect()
 }
 
-pub(crate) fn enumerate_and_filter_units<'input, 'file>(
+pub(crate) fn enumerate_index_units<'input, 'file>(
     file: &'file File<'input>,
     options: &Options,
 ) -> Vec<(usize, &'file Unit<'input>)> {
     file.units()
         .iter()
         .enumerate()
+        // TODO: enumerate all units, but lazily merge their contents
         .filter(|a| filter_unit(a.1, options))
         .collect()
 }
@@ -61,7 +62,7 @@ fn inline_types(unit: &Unit, hash: &FileHash) -> HashSet<TypeOffset> {
     inline_types
 }
 
-/// Filter and the list of types using the options.
+/// Filter the list of types using the options.
 /// Perform additional filtering when diffing.
 pub(crate) fn filter_types<'input, 'unit>(
     unit: &'unit Unit<'input>,
@@ -72,21 +73,20 @@ pub(crate) fn filter_types<'input, 'unit>(
     let inline_types = inline_types(unit, hash);
     unit.types()
         .iter()
-        .filter(|a| filter_type(a, options, diff, &inline_types))
+        .filter(|a| index_type(a, diff, &inline_types) && filter_type(a, options))
         .collect()
 }
 
-pub(crate) fn enumerate_and_filter_types<'input, 'unit>(
+pub(crate) fn enumerate_index_types<'input, 'unit>(
     unit: &'unit Unit<'input>,
     hash: &FileHash,
-    options: &Options,
     diff: bool,
 ) -> Vec<(usize, &'unit Type<'input>)> {
     let inline_types = inline_types(unit, hash);
     unit.types()
         .iter()
         .enumerate()
-        .filter(|a| filter_type(a.1, options, diff, &inline_types))
+        .filter(|a| index_type(a.1, diff, &inline_types))
         .collect()
 }
 
@@ -96,18 +96,17 @@ pub(crate) fn filter_functions<'input, 'unit>(
 ) -> Vec<&'unit Function<'input>> {
     unit.functions()
         .iter()
-        .filter(|a| filter_function(a, options))
+        .filter(|a| index_function(a) && filter_function(a, options))
         .collect()
 }
 
-pub(crate) fn enumerate_and_filter_functions<'input, 'unit>(
+pub(crate) fn enumerate_index_functions<'input, 'unit>(
     unit: &'unit Unit<'input>,
-    options: &Options,
 ) -> Vec<(usize, &'unit Function<'input>)> {
     unit.functions()
         .iter()
         .enumerate()
-        .filter(|a| filter_function(a.1, options))
+        .filter(|a| index_function(a.1))
         .collect()
 }
 
@@ -117,49 +116,55 @@ pub(crate) fn filter_variables<'input, 'unit>(
 ) -> Vec<&'unit Variable<'input>> {
     unit.variables()
         .iter()
-        .filter(|a| filter_variable(a, options))
+        .filter(|a| index_variable(a) && filter_variable(a, options))
         .collect()
 }
 
-pub(crate) fn enumerate_and_filter_variables<'input, 'unit>(
+pub(crate) fn enumerate_index_variables<'input, 'unit>(
     unit: &'unit Unit<'input>,
-    options: &Options,
 ) -> Vec<(usize, &'unit Variable<'input>)> {
     unit.variables()
         .iter()
         .enumerate()
-        .filter(|a| filter_variable(a.1, options))
+        .filter(|a| index_variable(a.1))
         .collect()
 }
 
-fn filter_function(f: &Function, options: &Options) -> bool {
+/// Return true if this function can be printed in a list.
+fn index_function(f: &Function) -> bool {
     if !f.is_inline() && (f.address().is_none() || f.size().is_none()) {
         // This is either a declaration or a dead function that was removed
         // from the code, but wasn't removed from the debuginfo.
         // TODO: make this configurable?
         return false;
     }
+    true
+}
+
+/// Return true if this function matches the filter options.
+pub(crate) fn filter_function(f: &Function, options: &Options) -> bool {
     options.filter_name(f.name())
         && options.filter_namespace(f.namespace())
         && options.filter_function_inline(f.is_inline())
 }
 
-fn filter_variable(v: &Variable, options: &Options) -> bool {
+/// Return true if this variable can be printed in a list.
+fn index_variable(v: &Variable) -> bool {
     if !v.is_declaration() && v.address().is_none() {
         // TODO: make this configurable?
         return false;
     }
+    true
+}
+
+/// Return true if this variable matches the filter options.
+pub(crate) fn filter_variable(v: &Variable, options: &Options) -> bool {
     options.filter_name(v.name()) && options.filter_namespace(v.namespace())
 }
 
-fn filter_type(
-    ty: &Type,
-    options: &Options,
-    diff: bool,
-    inline_types: &HashSet<TypeOffset>,
-) -> bool {
-    // Filter by user options.
-    if !match ty.kind() {
+/// Return true if this type matches the filter options.
+pub(crate) fn filter_type(ty: &Type, options: &Options) -> bool {
+    match ty.kind() {
         TypeKind::Base(val) => filter_base(val, options),
         TypeKind::Def(val) => filter_type_def(val, options),
         TypeKind::Struct(val) => filter_struct(val, options),
@@ -172,9 +177,13 @@ fn filter_type(
         | TypeKind::PointerToMember(..)
         | TypeKind::Modifier(..)
         | TypeKind::Subrange(..) => options.filter_name.is_none(),
-    } {
-        return false;
     }
+}
+
+/// Return true if this type can be printed in a list.
+///
+/// Excludes rust closures for diff mode.
+fn index_type(ty: &Type, diff: bool, inline_types: &HashSet<TypeOffset>) -> bool {
     match ty.kind() {
         TypeKind::Struct(val) => {
             // Hack for rust closures

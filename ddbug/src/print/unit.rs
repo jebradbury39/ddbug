@@ -193,15 +193,16 @@ pub(crate) fn diff_body(state: &mut DiffState, unit_a: &Unit, unit_b: &Unit) -> 
 
     let diff_types = |state: &mut DiffState| -> Result<()> {
         if options.category_type {
-            let mut types = state.index().merged_types(unit_a, unit_b);
+            let mut types = state.index().merged_types(unit_a, unit_b, options);
             state.sort_list(unit_a, unit_b, &mut types)?;
         }
         Ok(())
     };
-    let merged_functions = |state: &mut DiffState| merged_functions(unit_a, unit_b, state.index());
+    let merged_functions =
+        |state: &mut DiffState| merged_functions(unit_a, unit_b, state.index(), options);
     let diff_variables = |state: &mut DiffState| -> Result<()> {
         if options.category_variable {
-            let mut variables = state.index().merged_variables(unit_a, unit_b);
+            let mut variables = state.index().merged_variables(unit_a, unit_b, options);
             state.sort_list(unit_a, unit_b, &mut variables)?;
         }
         Ok(())
@@ -241,13 +242,14 @@ fn merged_functions<'a, 'input>(
     unit_a: &'a Unit<'input>,
     unit_b: &'a Unit<'input>,
     index: &DiffIndex,
+    options: &Options,
 ) -> (
     Vec<MergeResult<&'a Function<'input>, &'a Function<'input>>>,
     Vec<MergeResult<&'a Function<'input>, &'a Function<'input>>>,
 ) {
     let mut functions = Vec::new();
     let mut inlined_functions = Vec::new();
-    for function in index.merged_functions(unit_a, unit_b) {
+    for function in index.merged_functions(unit_a, unit_b, options) {
         let inline = match function {
             MergeResult::Both(a, b) => a.size().is_none() || b.size().is_none(),
             MergeResult::Left(a) => a.size().is_none(),

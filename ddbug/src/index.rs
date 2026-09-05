@@ -159,6 +159,8 @@ impl DiffIndex {
             self.unit_ids(),
             |a| file_a.units().get(a.unit_index()?),
             |b| file_b.units().get(b.unit_index()?),
+            // TODO: enumerate all units, but lazily merge their contents
+            |_| true,
         )
     }
 
@@ -174,11 +176,13 @@ impl DiffIndex {
         &self,
         unit_a: &'a Unit<'input>,
         unit_b: &'a Unit<'input>,
+        options: &Options,
     ) -> Vec<MergeResult<&'a Type<'input>, &'a Type<'input>>> {
         merge(
             self.type_ids(unit_a.id()),
             |a| unit_a.types().get(a.type_index()?),
             |b| unit_b.types().get(b.type_index()?),
+            |ty| filter::filter_type(ty, options),
         )
     }
 
@@ -192,11 +196,13 @@ impl DiffIndex {
         &self,
         unit_a: &'a Unit<'input>,
         unit_b: &'a Unit<'input>,
+        options: &Options,
     ) -> Vec<MergeResult<&'a Function<'input>, &'a Function<'input>>> {
         merge(
             self.function_ids(unit_a.id()),
             |a| unit_a.functions().get(a.function_index()?),
             |b| unit_b.functions().get(b.function_index()?),
+            |function| filter::filter_function(function, options),
         )
     }
 
@@ -210,11 +216,13 @@ impl DiffIndex {
         &self,
         unit_a: &'a Unit<'input>,
         unit_b: &'a Unit<'input>,
+        options: &Options,
     ) -> Vec<MergeResult<&'a Variable<'input>, &'a Variable<'input>>> {
         merge(
             self.variable_ids(unit_a.id()),
             |a| unit_a.variables().get(a.variable_index()?),
             |b| unit_b.variables().get(b.variable_index()?),
+            |variable| filter::filter_variable(variable, options),
         )
     }
 
@@ -226,9 +234,9 @@ impl DiffIndex {
 }
 
 fn assign_merged_ids(hash_a: &FileHash, hash_b: &FileHash, options: &Options) -> DiffIndex {
-    let mut units_a = filter::enumerate_and_filter_units(hash_a.file, options);
+    let mut units_a = filter::enumerate_index_units(hash_a.file, options);
     units_a.sort_by(|x, y| Unit::cmp_id(hash_a, x.1, hash_a, y.1, options));
-    let mut units_b = filter::enumerate_and_filter_units(hash_b.file, options);
+    let mut units_b = filter::enumerate_index_units(hash_b.file, options);
     units_b.sort_by(|x, y| Unit::cmp_id(hash_b, x.1, hash_b, y.1, options));
     let unit_merge: Vec<_> =
         MergeIterator::new(units_a.into_iter(), units_b.into_iter(), |a, b| {
@@ -354,9 +362,9 @@ fn assign_merged_ids_in_unit(
     options: &Options,
     ids: &mut Vec<(Id, Id)>,
 ) -> UnitIndex {
-    let mut types_a = filter::enumerate_and_filter_types(unit_a, hash_a, options, true);
+    let mut types_a = filter::enumerate_index_types(unit_a, hash_a, true);
     types_a.sort_by(|x, y| Type::cmp_id_for_sort(hash_a, x.1, hash_a, y.1, options));
-    let mut types_b = filter::enumerate_and_filter_types(unit_b, hash_b, options, true);
+    let mut types_b = filter::enumerate_index_types(unit_b, hash_b, true);
     types_b.sort_by(|x, y| Type::cmp_id_for_sort(hash_b, x.1, hash_b, y.1, options));
     let types = MergeIterator::new(types_a.into_iter(), types_b.into_iter(), |a, b| {
         Type::cmp_id(hash_a, a.1, hash_b, b.1)
@@ -401,9 +409,9 @@ fn assign_merged_ids_in_unit(
         }
     }
 
-    let mut functions_a = filter::enumerate_and_filter_functions(unit_a, options);
+    let mut functions_a = filter::enumerate_index_functions(unit_a);
     functions_a.sort_by(|x, y| Function::cmp_id_for_sort(hash_a, x.1, hash_a, y.1, options));
-    let mut functions_b = filter::enumerate_and_filter_functions(unit_b, options);
+    let mut functions_b = filter::enumerate_index_functions(unit_b);
     functions_b.sort_by(|x, y| Function::cmp_id_for_sort(hash_b, x.1, hash_b, y.1, options));
     let functions = MergeIterator::new(functions_a.into_iter(), functions_b.into_iter(), |a, b| {
         <Function as SortList>::cmp_id(hash_a, a.1, hash_b, b.1, options)
@@ -448,9 +456,9 @@ fn assign_merged_ids_in_unit(
         }
     }
 
-    let mut variables_a = filter::enumerate_and_filter_variables(unit_a, options);
+    let mut variables_a = filter::enumerate_index_variables(unit_a);
     variables_a.sort_by(|x, y| Variable::cmp_id_for_sort(hash_a, x.1, hash_a, y.1, options));
-    let mut variables_b = filter::enumerate_and_filter_variables(unit_b, options);
+    let mut variables_b = filter::enumerate_index_variables(unit_b);
     variables_b.sort_by(|x, y| Variable::cmp_id_for_sort(hash_b, x.1, hash_b, y.1, options));
     let variables = MergeIterator::new(variables_a.into_iter(), variables_b.into_iter(), |a, b| {
         <Variable as SortList>::cmp_id(hash_a, a.1, hash_b, b.1, options)
@@ -502,13 +510,28 @@ fn assign_merged_ids_in_unit(
 }
 
 /// Convert a range of `DiffIndex::ids` into the merged items that they refer to.
+///
+/// `keep` applies the user specified filter options.
 fn merge<'a, T: 'a>(
     ids: &[(Id, Id)],
     get_a: impl Fn(Id) -> Option<&'a T>,
     get_b: impl Fn(Id) -> Option<&'a T>,
+    keep: impl Fn(&T) -> bool,
 ) -> Vec<MergeResult<&'a T, &'a T>> {
     ids.iter()
         .filter_map(move |&(id_a, id_b)| merge_result(get_a(id_a), get_b(id_b)))
+        .filter_map(|item| match item {
+            // If only one side of a merged pair matches, demote the pair to an
+            // added/deleted item. This matters for function-inline.
+            MergeResult::Both(a, b) => match (keep(a), keep(b)) {
+                (true, true) => Some(MergeResult::Both(a, b)),
+                (true, false) => Some(MergeResult::Left(a)),
+                (false, true) => Some(MergeResult::Right(b)),
+                (false, false) => None,
+            },
+            MergeResult::Left(a) => keep(a).then_some(MergeResult::Left(a)),
+            MergeResult::Right(b) => keep(b).then_some(MergeResult::Right(b)),
+        })
         .collect()
 }
 
