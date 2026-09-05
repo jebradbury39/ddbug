@@ -251,7 +251,7 @@ fn merged_functions<'a, 'input>(
     let mut inlined_functions = Vec::new();
     for function in index.merged_functions(unit_a, unit_b, options) {
         let inline = match function {
-            MergeResult::Both(a, b) => a.size().is_none() || b.size().is_none(),
+            MergeResult::Both(a, b) => a.size().is_none() && b.size().is_none(),
             MergeResult::Left(a) => a.size().is_none(),
             MergeResult::Right(b) => b.size().is_none(),
         };
