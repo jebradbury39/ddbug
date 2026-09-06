@@ -2,10 +2,11 @@ use std::collections::HashMap;
 
 use parser::File;
 
-use crate::Result;
 use crate::code::Code;
+use crate::filter;
 use crate::index::Id;
 use crate::print::{self, PrintState};
+use crate::{Options, Result};
 
 pub(crate) struct BloatIndex {
     function_totals: Vec<(FunctionId, FunctionTotal)>,
@@ -33,7 +34,7 @@ struct Caller {
 }
 
 impl BloatIndex {
-    pub fn new(file: &File) -> BloatIndex {
+    pub fn new(file: &File, options: &Options) -> BloatIndex {
         let code = Code::new(file);
 
         // Build a list of copies of functions.
@@ -41,18 +42,21 @@ impl BloatIndex {
         // Also build a map of callers.
         let mut callers = HashMap::new();
         for (unit_index, unit) in file.units().iter().enumerate() {
+            let include_unit = filter::filter_unit(unit, options);
             for (function_index, function) in unit.functions().iter().enumerate() {
                 if let Some(size) = function.size() {
-                    let mut name = Vec::new();
-                    print::function::print_ref(function, &mut name).unwrap();
-                    let mut source = Vec::new();
-                    print::source::print(function.source(), &mut source, unit).unwrap();
-                    let id = FunctionId { name, source };
-                    let function_total = function_totals
-                        .entry(id)
-                        .or_insert(FunctionTotal::default());
-                    function_total.size += size;
-                    function_total.functions.push((unit_index, function_index));
+                    if include_unit {
+                        let mut name = Vec::new();
+                        print::function::print_ref(function, &mut name).unwrap();
+                        let mut source = Vec::new();
+                        print::source::print(function.source(), &mut source, unit).unwrap();
+                        let id = FunctionId { name, source };
+                        let function_total = function_totals
+                            .entry(id)
+                            .or_insert(FunctionTotal::default());
+                        function_total.size += size;
+                        function_total.functions.push((unit_index, function_index));
+                    }
 
                     if let Some(code) = code.as_ref() {
                         for range in function.ranges() {

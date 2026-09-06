@@ -144,7 +144,7 @@ impl<'input> BloatContext<'input> {
     pub fn new(file: &'input File<'input>, options: Options) -> Self {
         let hash = FileHash::new(file);
         let index = Index::new(&hash, &options);
-        let bloat = BloatIndex::new(file);
+        let bloat = BloatIndex::new(file, &options);
         BloatContext {
             hash,
             index,

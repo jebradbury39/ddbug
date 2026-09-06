@@ -21,7 +21,7 @@ pub(crate) fn enumerate_index_units<'input, 'file>(
 }
 
 /// Return true if this unit matches the filter options.
-fn filter_unit(unit: &Unit, options: &Options) -> bool {
+pub(crate) fn filter_unit(unit: &Unit, options: &Options) -> bool {
     if let Some(filter) = options.filter_unit.as_ref() {
         let (prefix, suffix) = options.prefix_map(unit.name().unwrap_or(""));
         let iter = prefix.bytes().chain(suffix.bytes());
