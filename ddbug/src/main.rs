@@ -228,7 +228,7 @@ fn cli() -> clap::Command {
             "    function-inline=<yes|no>        Match function 'inline' value\n",
             "    name=<string>                   Match entries with the given name\n",
             "    namespace=<string>              Match entries within the given namespace\n",
-            "    unit=<string>                   Match entries within the given unit\n"
+            "    unit=<glob>                     Match unit paths\n",
         ))
 }
 

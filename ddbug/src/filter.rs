@@ -1,4 +1,3 @@
-use std::cmp;
 use std::collections::HashSet;
 
 use parser::{
@@ -7,6 +6,8 @@ use parser::{
 };
 
 use crate::Options;
+use crate::glob;
+use crate::print;
 
 pub(crate) fn enumerate_index_units<'input, 'file>(
     file: &'file File<'input>,
@@ -22,12 +23,19 @@ pub(crate) fn enumerate_index_units<'input, 'file>(
 
 /// Return true if this unit matches the filter options.
 pub(crate) fn filter_unit(unit: &Unit, options: &Options) -> bool {
-    if let Some(filter) = options.filter_unit.as_ref() {
-        let (prefix, suffix) = options.prefix_map(unit.name().unwrap_or(""));
-        let iter = prefix.bytes().chain(suffix.bytes());
-        iter.cmp(filter.bytes()) == cmp::Ordering::Equal
+    let Some(filter) = options.filter_unit.as_ref() else {
+        return true;
+    };
+    let [prefix, dir, sep, name] = options.prefix_map(print::unit::path(unit));
+    let path = format!("{}{}{}{}", prefix, dir, sep, name);
+    if glob::matches(filter, &path) {
+        return true;
+    }
+    // Try again without the rust codegen unit.
+    if let Some((path, _)) = path.rsplit_once("/@/") {
+        glob::matches(filter, path)
     } else {
-        true
+        false
     }
 }
 

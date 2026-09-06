@@ -21,6 +21,7 @@ pub use parser::{Arena, Error, File, Result};
 
 mod code;
 mod filter;
+mod glob;
 mod index;
 mod merge;
 mod shortest_path;
@@ -107,12 +108,27 @@ impl Options {
         }
     }
 
-    fn prefix_map<'name>(&self, name: &'name str) -> (&str, &'name str) {
+    fn prefix_map<'name>(&'name self, path: [&'name str; 3]) -> [&'name str; 4] {
+        let [dir, sep, name] = path;
         for (old, new) in &self.prefix_map {
-            if name.starts_with(old) {
-                return (new, &name[old.len()..]);
+            if let Some(dir) = dir.strip_prefix(old) {
+                return [new, dir, sep, name];
+            }
+            let Some(old) = old.strip_prefix(dir) else {
+                continue;
+            };
+
+            if let Some(sep) = sep.strip_prefix(old) {
+                return [new, "", sep, name];
+            }
+            let Some(old) = old.strip_prefix(sep) else {
+                continue;
+            };
+
+            if let Some(name) = name.strip_prefix(old) {
+                return [new, "", "", name];
             }
         }
-        ("", name)
+        ["", dir, sep, name]
     }
 }

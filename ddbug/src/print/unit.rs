@@ -7,19 +7,23 @@ use crate::merge::MergeResult;
 use crate::print::{self, DiffState, Print, PrintState, SortList, ValuePrinter};
 use crate::{Options, Result, Sort};
 
-pub(crate) fn print_ref(unit: &Unit, w: &mut dyn ValuePrinter) -> Result<()> {
+pub(crate) fn path<'a>(unit: &'a Unit) -> [&'a str; 3] {
+    let mut dir = "";
+    let mut sep = "";
     let name = unit.name().unwrap_or("<anon>");
     // TODO: windows support
     if !name.starts_with('/') {
-        let dir = unit.dir().unwrap_or("");
-        if !dir.is_empty() {
-            write!(w, "{}", dir)?;
-            if !dir.ends_with('/') {
-                write!(w, "/")?;
-            }
+        dir = unit.dir().unwrap_or("");
+        if !dir.is_empty() && !dir.ends_with('/') {
+            sep = "/";
         }
     }
-    write!(w, "{}", name)?;
+    [dir, sep, name]
+}
+
+pub(crate) fn print_ref(unit: &Unit, w: &mut dyn ValuePrinter) -> Result<()> {
+    let [dir, sep, name] = path(unit);
+    write!(w, "{}{}{}", dir, sep, name)?;
     Ok(())
 }
 
@@ -305,13 +309,14 @@ impl<'input> SortList for Unit<'input> {
         b: &Self,
         options: &Options,
     ) -> cmp::Ordering {
-        let (prefix_a, suffix_a) = options.prefix_map(a.name().unwrap_or(""));
-        let (prefix_b, suffix_b) = options.prefix_map(b.name().unwrap_or(""));
+        let mut path_a = options.prefix_map(path(a));
+        let mut path_b = options.prefix_map(path(b));
+        // Ignore rust codegen unit.
         // TODO: make this optional?
-        let suffix_a = suffix_a.rsplit_once('@').map(|x| x.0).unwrap_or(suffix_a);
-        let suffix_b = suffix_b.rsplit_once('@').map(|x| x.0).unwrap_or(suffix_b);
-        let iter_a = prefix_a.bytes().chain(suffix_a.bytes());
-        let iter_b = prefix_b.bytes().chain(suffix_b.bytes());
+        path_a[3] = path_a[3].rsplit_once("/@/").map_or(path_a[3], |x| x.0);
+        path_b[3] = path_b[3].rsplit_once("/@/").map_or(path_b[3], |x| x.0);
+        let iter_a = path_a.into_iter().flat_map(str::bytes);
+        let iter_b = path_b.into_iter().flat_map(str::bytes);
         iter_a.cmp(iter_b)
     }
 
