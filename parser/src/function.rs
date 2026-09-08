@@ -308,7 +308,7 @@ impl<'input> Parameter<'input> {
         location::registers(&self.locations)
     }
 
-    /// The registers pointing to where this variable is stored.
+    /// The registers pointing to where this parameter is stored.
     pub fn register_offsets(&self) -> impl Iterator<Item = (Range, Register, i64)> + '_ {
         location::register_offsets(&self.locations)
     }

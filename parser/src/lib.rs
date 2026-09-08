@@ -5,8 +5,8 @@
 //! ```rust,no_run
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # let a_file_path = String::new();
-//! let ctx = ddbug_parser::File::parse(a_file_path)?;
-//! let file = ctx.file();
+//! let arena = ddbug_parser::Arena::new();
+//! let file = ddbug_parser::File::parse(a_file_path, &arena)?;
 //! for unit in file.units() {
 //!     for function in unit.functions() {
 //!         if let Some(name) = function.name() {

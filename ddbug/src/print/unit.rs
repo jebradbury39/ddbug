@@ -1,0 +1,337 @@
+use std::cmp;
+
+use parser::{FileHash, Function, Range, Unit};
+
+use crate::index::Index;
+use crate::merge::MergeResult;
+use crate::print::{self, DiffState, Print, PrintState, SortList, ValuePrinter};
+use crate::{Options, Result, Sort};
+
+pub(crate) fn path<'a>(unit: &'a Unit) -> [&'a str; 3] {
+    let mut dir = "";
+    let mut sep = "";
+    let name = unit.name().unwrap_or("<anon>");
+    // TODO: windows support
+    if !name.starts_with('/') {
+        dir = unit.dir().unwrap_or("");
+        if !dir.is_empty() && !dir.ends_with('/') {
+            sep = "/";
+        }
+    }
+    [dir, sep, name]
+}
+
+pub(crate) fn print_ref(unit: &Unit, w: &mut dyn ValuePrinter) -> Result<()> {
+    let [dir, sep, name] = path(unit);
+    write!(w, "{}{}{}", dir, sep, name)?;
+    Ok(())
+}
+
+pub(crate) fn print_header(unit: &Unit, state: &mut PrintState) -> Result<()> {
+    state.line(|w, _state| {
+        write!(w, "unit ")?;
+        print_ref(unit, w)
+    })
+}
+
+pub(crate) fn print_body(unit: &Unit, state: &mut PrintState) -> Result<()> {
+    let options = state.options();
+
+    let print_unit = |state: &mut PrintState| {
+        let unknown_ranges = unit.unknown_ranges(state.hash());
+
+        if options.print_unit_address {
+            let ranges = unit.ranges(state.hash());
+            if ranges.list().len() > 1 {
+                state.field_collapsed("addresses", |state| state.list(&(), ranges.list()))?;
+            } else {
+                let range = ranges.list().first().cloned();
+                state.field("address", |w, _state| print_address(unit, w, range))?;
+            }
+
+            state.field_collapsed("unknown addresses", |state| {
+                state.list(&(), unknown_ranges.list())
+            })?;
+        }
+
+        let fn_size = unit.function_size();
+        if fn_size != 0 {
+            state.field_u64("fn size", fn_size)?;
+        }
+
+        let var_size = unit.variable_size(state.hash());
+        if var_size != 0 {
+            state.field_u64("var size", var_size)?;
+        }
+
+        let unknown_size = unknown_ranges.size();
+        if unknown_size != 0 {
+            state.field_u64("unknown size", unknown_size)?;
+        }
+
+        state.line_break()?;
+        Ok(())
+    };
+
+    let print_types = |state: &mut PrintState| -> Result<()> {
+        if options.category_type {
+            let mut types = state.index().types(unit, options);
+            state.sort_list(unit, &mut types)?;
+        }
+        Ok(())
+    };
+    let print_functions = |state: &mut PrintState| -> Result<()> {
+        if options.category_function {
+            let mut functions = state.index().functions(unit, options);
+            state.sort_list(unit, &mut functions)?;
+        }
+        Ok(())
+    };
+    let print_variables = |state: &mut PrintState| -> Result<()> {
+        if options.category_variable {
+            let mut variables = state.index().variables(unit, options);
+            state.sort_list(unit, &mut variables)?;
+        }
+        Ok(())
+    };
+
+    if options.html {
+        if options.category_unit {
+            print_unit(state)?;
+        }
+        state.field_collapsed("types", &print_types)?;
+        if options.category_function {
+            let functions = state.index().functions(unit, options);
+            let (mut functions, mut inlined_functions): (Vec<_>, Vec<_>) =
+                functions.into_iter().partition(|f| f.size().is_some());
+            state.field_collapsed("functions", |state| state.sort_list(unit, &mut functions))?;
+            state.field_collapsed("inlined functions", |state| {
+                state.sort_list(unit, &mut inlined_functions)
+            })?;
+        }
+        state.field_collapsed("variables", &print_variables)?;
+    } else {
+        if options.category_unit {
+            state.expanded(|state| print_header(unit, state), print_unit)?;
+        }
+        print_types(state)?;
+        print_functions(state)?;
+        print_variables(state)?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn print(unit: &Unit, state: &mut PrintState) -> Result<()> {
+    if state.options().html {
+        state.id(
+            unit.id(),
+            |state| print_header(unit, state),
+            |state| print_body(unit, state),
+        )?;
+    } else {
+        print_body(unit, state)?;
+    }
+    Ok(())
+}
+
+fn diff_header(state: &mut DiffState, unit_a: &Unit, unit_b: &Unit) -> Result<()> {
+    state.line(unit_a, unit_b, |w, _state, unit| {
+        write!(w, "unit ")?;
+        print_ref(unit, w)
+    })
+}
+
+pub(crate) fn diff_body(state: &mut DiffState, unit_a: &Unit, unit_b: &Unit) -> Result<()> {
+    let options = state.options();
+
+    let diff_unit = |state: &mut DiffState| -> Result<()> {
+        let unknown_ranges_a = unit_a.unknown_ranges(state.hash_a());
+        let unknown_ranges_b = unit_b.unknown_ranges(state.hash_b());
+
+        if options.print_unit_address {
+            let ranges_a = unit_a.ranges(state.hash_a());
+            let ranges_b = unit_b.ranges(state.hash_b());
+            if ranges_a.list().len() > 1 || ranges_b.list().len() > 1 {
+                state.field_collapsed("addresses", |state| {
+                    state.ord_list(&(), ranges_a.list(), &(), ranges_b.list())
+                })?;
+            } else {
+                let range_a = ranges_a.list().first().cloned();
+                let range_b = ranges_b.list().first().cloned();
+                state.field(
+                    "address",
+                    (unit_a, range_a),
+                    (unit_b, range_b),
+                    |w, _state, (unit, range)| print_address(unit, w, range),
+                )?;
+            }
+
+            state.field_collapsed("unknown addresses", |state| {
+                state.ord_list(&(), unknown_ranges_a.list(), &(), unknown_ranges_b.list())
+            })?;
+        }
+
+        let fn_size_a = unit_a.function_size();
+        let fn_size_b = unit_b.function_size();
+        if fn_size_a != 0 || fn_size_b != 0 {
+            state.field_u64("fn size", fn_size_a, fn_size_b)?;
+        }
+
+        let var_size_a = unit_a.variable_size(state.hash_a());
+        let var_size_b = unit_b.variable_size(state.hash_b());
+        if var_size_a != 0 || var_size_b != 0 {
+            state.field_u64("var size", var_size_a, var_size_b)?;
+        }
+
+        let unknown_size_a = unknown_ranges_a.size();
+        let unknown_size_b = unknown_ranges_b.size();
+        if unknown_size_a != 0 || unknown_size_b != 0 {
+            state.field_u64("unknown size", unknown_size_a, unknown_size_b)?;
+        }
+
+        state.line_break()?;
+        Ok(())
+    };
+
+    let diff_types = |state: &mut DiffState| -> Result<()> {
+        if options.category_type {
+            let mut types = state.index().merged_types(unit_a, unit_b, options);
+            state.sort_list(unit_a, unit_b, &mut types)?;
+        }
+        Ok(())
+    };
+    let merged_functions =
+        |state: &mut DiffState| merged_functions(unit_a, unit_b, state.index(), options);
+    let diff_variables = |state: &mut DiffState| -> Result<()> {
+        if options.category_variable {
+            let mut variables = state.index().merged_variables(unit_a, unit_b, options);
+            state.sort_list(unit_a, unit_b, &mut variables)?;
+        }
+        Ok(())
+    };
+
+    if options.html {
+        if options.category_unit {
+            diff_unit(state)?;
+        }
+        state.field_collapsed("types", &diff_types)?;
+        if options.category_function {
+            let (mut functions, mut inlined_functions) = merged_functions(state);
+            state.field_collapsed("functions", |state| {
+                state.sort_list(unit_a, unit_b, &mut functions)
+            })?;
+            state.field_collapsed("inlined functions", |state| {
+                state.sort_list(unit_a, unit_b, &mut inlined_functions)
+            })?;
+        }
+        state.field_collapsed("variables", &diff_variables)?;
+    } else {
+        if options.category_unit {
+            state.collapsed(|state| diff_header(state, unit_a, unit_b), diff_unit)?;
+        }
+        diff_types(state)?;
+        if options.category_function {
+            let (mut functions, mut inlined_functions) = merged_functions(state);
+            state.sort_list(unit_a, unit_b, &mut functions)?;
+            state.sort_list(unit_a, unit_b, &mut inlined_functions)?;
+        }
+        diff_variables(state)?;
+    }
+    Ok(())
+}
+
+fn merged_functions<'a, 'input>(
+    unit_a: &'a Unit<'input>,
+    unit_b: &'a Unit<'input>,
+    index: &Index,
+    options: &Options,
+) -> (
+    Vec<MergeResult<&'a Function<'input>, &'a Function<'input>>>,
+    Vec<MergeResult<&'a Function<'input>, &'a Function<'input>>>,
+) {
+    let mut functions = Vec::new();
+    let mut inlined_functions = Vec::new();
+    for function in index.merged_functions(unit_a, unit_b, options) {
+        let inline = match function {
+            MergeResult::Both(a, b) => a.size().is_none() && b.size().is_none(),
+            MergeResult::Left(a) => a.size().is_none(),
+            MergeResult::Right(b) => b.size().is_none(),
+        };
+        if inline {
+            inlined_functions.push(function);
+        } else {
+            functions.push(function);
+        }
+    }
+    (functions, inlined_functions)
+}
+
+pub(crate) fn diff(state: &mut DiffState, unit_a: &Unit, unit_b: &Unit) -> Result<()> {
+    if state.options().html {
+        state.id(
+            unit_a.id(),
+            |state| diff_header(state, unit_a, unit_b),
+            |state| diff_body(state, unit_a, unit_b),
+        )?;
+    } else {
+        diff_body(state, unit_a, unit_b)?;
+    }
+    Ok(())
+}
+
+fn print_address(unit: &Unit, w: &mut dyn ValuePrinter, range: Option<Range>) -> Result<()> {
+    if let Some(range) = range {
+        print::range::print_address(&range, w)?;
+    } else if let Some(low_pc) = unit.address() {
+        write!(w, "0x{:x}", low_pc)?;
+    }
+    Ok(())
+}
+
+impl<'input> Print for Unit<'input> {
+    type Arg = ();
+
+    fn print(&self, state: &mut PrintState, _arg: &()) -> Result<()> {
+        print(self, state)
+    }
+
+    fn diff(state: &mut DiffState, _arg_a: &(), a: &Self, _arg_b: &(), b: &Self) -> Result<()> {
+        diff(state, a, b)
+    }
+}
+
+impl<'input> SortList for Unit<'input> {
+    fn cmp_id(
+        _hash_a: &FileHash,
+        a: &Self,
+        _hash_b: &FileHash,
+        b: &Self,
+        options: &Options,
+    ) -> cmp::Ordering {
+        let mut path_a = options.prefix_map(path(a));
+        let mut path_b = options.prefix_map(path(b));
+        // Ignore rust codegen unit.
+        // TODO: make this optional?
+        path_a[3] = path_a[3].rsplit_once("/@/").map_or(path_a[3], |x| x.0);
+        path_b[3] = path_b[3].rsplit_once("/@/").map_or(path_b[3], |x| x.0);
+        let iter_a = path_a.into_iter().flat_map(str::bytes);
+        let iter_b = path_b.into_iter().flat_map(str::bytes);
+        iter_a.cmp(iter_b)
+    }
+
+    fn cmp_by(
+        hash_a: &FileHash,
+        a: &Self,
+        hash_b: &FileHash,
+        b: &Self,
+        options: &Options,
+    ) -> cmp::Ordering {
+        match options.sort {
+            // TODO: sort by offset?
+            Sort::None => cmp::Ordering::Equal,
+            Sort::Name => Unit::cmp_id(hash_a, a, hash_b, b, options),
+            Sort::Size => a.size(hash_a).cmp(&b.size(hash_b)),
+        }
+    }
+}

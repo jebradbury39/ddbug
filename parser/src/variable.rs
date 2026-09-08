@@ -3,7 +3,7 @@ use std::cmp;
 use std::sync::Arc;
 
 use crate::file::FileHash;
-use crate::location::{self, FrameLocation, Location, Piece, Register};
+use crate::location::{self, FrameLocation, Piece, Register};
 use crate::namespace::Namespace;
 use crate::range::Range;
 use crate::source::Source;
@@ -253,22 +253,8 @@ impl<'input> LocalVariable<'input> {
     }
 
     /// The stack frame locations at which this variable is stored.
-    pub fn frame_locations(&self) -> impl Iterator<Item = FrameLocation> + '_ {
-        self.locations.iter().filter_map(|(_, piece)| {
-            if piece.is_value {
-                return None;
-            }
-            match piece.location {
-                // TODO: do we need to distinguish between these?
-                Location::FrameOffset { offset } | Location::CfaOffset { offset } => {
-                    Some(FrameLocation {
-                        offset,
-                        bit_size: piece.bit_size,
-                    })
-                }
-                _ => None,
-            }
-        })
+    pub fn frame_locations(&self) -> impl Iterator<Item = (Range, FrameLocation)> + '_ {
+        location::frame_locations(&self.locations)
     }
 
     /// Compare the identifying information of two variables.

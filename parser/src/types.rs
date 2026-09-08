@@ -775,12 +775,9 @@ impl<'input> VariantPart<'input> {
         let mut end = start;
         for variant in &self.variants {
             let o = variant.bit_offset();
-            if let Some(size) = variant.bit_size(hash) {
-                if end < o + size {
-                    end = o + size;
-                }
-            } else {
-                return None;
+            let size = variant.bit_size(hash)?;
+            if end < o + size {
+                end = o + size;
             }
         }
         Some(end - start)
@@ -848,12 +845,9 @@ impl<'input> Variant<'input> {
         let mut end = start;
         for member in &self.members {
             let o = member.bit_offset();
-            if let Some(size) = member.bit_size(hash) {
-                if end < o + size {
-                    end = o + size;
-                }
-            } else {
-                return None;
+            let size = member.bit_size(hash)?;
+            if end < o + size {
+                end = o + size;
             }
         }
         Some(end - start)
@@ -1264,11 +1258,7 @@ impl<'input> ArrayType<'input> {
                 return None;
             }
             for count in counts.iter().copied() {
-                if let Some(count) = count.get() {
-                    size *= count;
-                } else {
-                    return None;
-                }
+                size *= count.get()?;
             }
             Some(size)
         } else {
